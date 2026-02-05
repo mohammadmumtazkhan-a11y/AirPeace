@@ -29,7 +29,7 @@ export default function Home() {
         const { PaymentSelection } = require('@/components/screens/PaymentSelection');
         return (
             <PaymentSelection
-                onSelectMethod={(methodId) => {
+                onSelectMethod={(methodId: string) => {
                     // Allow 'transfer' OR 'mito' (Pay by Bank) to trigger the demo flow
                     if (methodId === 'transfer' || methodId === 'mito') {
                         setHasSelectedPayment(true);
