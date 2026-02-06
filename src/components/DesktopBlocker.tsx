@@ -29,13 +29,14 @@ export function DesktopBlocker({ paymentData, onContinue }: DesktopBlockerProps)
     };
 
     const formatCurrency = (amount: number, currency: string) => {
-        const symbols: Record<string, string> = { GBP: '£', USD: '$', EUR: '€', NGN: '₦' };
-        return `${symbols[currency] || currency} ${amount.toFixed(2)}`;
+        return new Intl.NumberFormat('en-GB', {
+            style: 'currency',
+            currency,
+        }).format(amount);
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-8">
-            {/* AirPeace Header Logo */}
+        <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-8">
             <div className="fixed top-6 left-8">
                 <AirPeaceLogo />
             </div>
@@ -46,68 +47,61 @@ export function DesktopBlocker({ paymentData, onContinue }: DesktopBlockerProps)
                 transition={{ duration: 0.5 }}
                 className="w-full max-w-md"
             >
-                {/* Main Card */}
-                <div className="bg-white rounded-3xl shadow-2xl border-2 border-dashed border-airpeace-blue/40 p-8 relative overflow-hidden">
-                    {/* Background Pattern */}
+                <div className="relative overflow-hidden rounded-3xl border-2 border-dashed border-airpeace-blue/40 bg-white p-8 shadow-2xl">
                     <div className="absolute inset-0 opacity-5">
                         <div className="absolute inset-0 bg-gradient-to-br from-airpeace-navy to-airpeace-blue" />
                     </div>
 
                     <div className="relative z-10">
-                        {/* Logo */}
-                        <div className="flex justify-center mb-6">
+                        <div className="mb-6 flex justify-center">
                             <AirPeaceLogo size="large" />
                         </div>
 
-                        {/* Trust Badge */}
-                        <div className="flex items-center justify-center gap-2 mb-6">
-                            <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 rounded-full border border-slate-200">
-                                <Shield className="w-4 h-4 text-green-600" />
+                        <div className="mb-6 flex items-center justify-center gap-2">
+                            <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2">
+                                <Shield className="h-4 w-4 text-green-600" />
                                 <span className="text-sm text-slate-600">Payment securely processed via PLAID</span>
                             </div>
                         </div>
 
-                        {/* Timer */}
-                        <div className="flex items-center justify-center gap-2 mb-8">
-                            <Clock className="w-5 h-5 text-orange-500 timer-pulse" />
+                        <div className="mb-8 flex items-center justify-center gap-2">
+                            <Clock className="timer-pulse h-5 w-5 text-orange-500" />
                             <span className="text-slate-700">
                                 You have <span className="font-bold text-orange-500">{formatTime(timeLeft)}</span> mins to complete payment
                             </span>
                         </div>
 
-                        {/* Payment Details Card */}
-                        <div className="bg-slate-50 rounded-xl p-5 mb-8 border border-slate-200">
+                        <div className="mb-8 rounded-xl border border-slate-200 bg-slate-50 p-5">
                             <div className="space-y-3">
-                                <div className="flex justify-between items-center">
+                                <div className="flex items-center justify-between">
                                     <span className="text-slate-500">Total</span>
                                     <span className="text-2xl font-bold text-slate-900">
                                         {formatCurrency(paymentData.amount, paymentData.currency)}
                                     </span>
                                 </div>
-                                <div className="flex justify-between items-center">
+                                <div className="flex items-center justify-between">
                                     <span className="text-slate-500">Paying to</span>
-                                    <span className="text-slate-700 font-medium">✈ Air Peace via PLAID</span>
+                                    <span className="font-medium text-slate-700">Air Peace via PLAID</span>
                                 </div>
-                                <div className="flex justify-between items-center">
+                                <div className="flex items-center justify-between">
                                     <span className="text-slate-500">Reference</span>
-                                    <span className="text-slate-700 font-mono text-sm">{paymentData.ticketRef}</span>
+                                    <span className="font-mono text-sm text-slate-700">{paymentData.ticketRef}</span>
                                 </div>
                             </div>
                         </div>
 
-                        {/* QR Code Section */}
                         <div className="flex flex-col items-center">
-                            <p className="text-slate-500 text-sm mb-4">Scan QR Code to pay</p>
+                            <p className="mb-4 text-sm text-slate-500">Scan to complete payment securely on your mobile.</p>
 
                             <motion.button
                                 onClick={onContinue}
-                                className="p-4 bg-white rounded-2xl shadow-lg border border-slate-200 cursor-pointer hover:scale-105 transition-transform"
+                                className="cursor-pointer rounded-2xl border border-slate-200 bg-white p-4 shadow-lg transition-transform hover:scale-105"
                                 animate={{
                                     boxShadow: [
                                         '0 10px 40px rgba(0, 51, 102, 0.1)',
                                         '0 10px 40px rgba(0, 51, 102, 0.25)',
                                         '0 10px 40px rgba(0, 51, 102, 0.1)',
-                                    ]
+                                    ],
                                 }}
                                 transition={{ duration: 2, repeat: Infinity }}
                                 whileHover={{ scale: 1.05 }}
@@ -122,12 +116,11 @@ export function DesktopBlocker({ paymentData, onContinue }: DesktopBlockerProps)
                                 />
                             </motion.button>
 
-                            <p className="text-xs text-airpeace-blue mt-3 font-medium">Click to continue on this device</p>
+                            <p className="mt-3 text-xs font-medium text-airpeace-blue">Click to continue on this device</p>
                         </div>
 
-                        {/* Legal Text */}
-                        <div className="mt-8 text-center space-y-3">
-                            <p className="text-xs text-slate-400 leading-relaxed border border-dashed border-slate-300 rounded-lg p-3">
+                        <div className="mt-8 space-y-3 text-center">
+                            <p className="rounded-lg border border-dashed border-slate-300 p-3 text-xs leading-relaxed text-slate-400">
                                 By scanning the QR code you give permission to Mito.Money to initiate a payment via PLAID
                                 and share your account details with Mito.Money. You also agree to our{' '}
                                 <a href="#" className="text-airpeace-blue hover:underline">Terms of Service</a> and{' '}
@@ -135,7 +128,7 @@ export function DesktopBlocker({ paymentData, onContinue }: DesktopBlockerProps)
                             </p>
 
                             <div className="flex items-center justify-center gap-2 text-slate-400">
-                                <Info className="w-4 h-4" />
+                                <Info className="h-4 w-4" />
                                 <span className="text-xs">Mito.Money collects payments for AirPeace</span>
                             </div>
                         </div>
@@ -146,7 +139,6 @@ export function DesktopBlocker({ paymentData, onContinue }: DesktopBlockerProps)
     );
 }
 
-// AirPeace Logo Component
 function AirPeaceLogo({ size = 'normal' }: { size?: 'normal' | 'large' }) {
     const scale = size === 'large' ? 1.5 : 1;
 
@@ -163,7 +155,7 @@ function AirPeaceLogo({ size = 'normal' }: { size?: 'normal' | 'large' }) {
                     <span className="text-airpeace-red"> PEACE</span>
                 </span>
             </div>
-            <span className="text-[10px] text-slate-500 italic tracking-wider">...your peace, our goal</span>
+            <span className="text-[10px] italic tracking-wider text-slate-500">...your peace, our goal</span>
         </div>
     );
 }
