@@ -9,17 +9,11 @@ interface SuccessScreenProps {
 }
 
 export function SuccessScreen({ isConnecting }: SuccessScreenProps) {
-    // Stage 1: Identity Verified (Simulate connecting time) -> Stage 2: Payment Successful
-    const [stage, setStage] = useState<'verified' | 'success'>('verified');
+    // Go directly to Payment Successful after connecting
+    const [stage, setStage] = useState<'success'>('success');
 
     useEffect(() => {
-        if (!isConnecting) {
-            // After "Identity Verified" mounts, wait 3 seconds then show "Payment Successful"
-            const timer = setTimeout(() => {
-                setStage('success');
-            }, 3000);
-            return () => clearTimeout(timer);
-        }
+        // No intermediate stage needed - go straight to success
     }, [isConnecting]);
 
     return (
@@ -49,58 +43,6 @@ export function SuccessScreen({ isConnecting }: SuccessScreenProps) {
                         </div>
                         <h2 className="text-2xl font-bold text-slate-900 mb-2">Connecting to Bank...</h2>
                         <p className="text-slate-500 mb-4">Launching secure payment interface</p>
-                    </motion.div>
-                ) : stage === 'verified' ? (
-                    <motion.div
-                        key="verified"
-                        initial={{ scale: 0.8, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        exit={{ scale: 0.8, opacity: 0, y: -20 }}
-                        className="flex flex-col items-center text-center w-full"
-                    >
-                        {/* Premium Success Animation */}
-                        <motion.div
-                            initial={{ scale: 0.8, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                            className="relative mb-8"
-                        >
-                            <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-green-500 to-emerald-400 flex items-center justify-center shadow-lg shadow-green-200 relative z-10">
-                                <CheckCircle2 className="w-12 h-12 text-white" strokeWidth={3} />
-                            </div>
-                        </motion.div>
-
-                        <h2 className="text-3xl font-black text-slate-900 mb-2 tracking-tight">Identity Verified</h2>
-                        <p className="text-slate-500 mb-10 max-w-xs px-4 text-center leading-relaxed">
-                            Your identity has been successfully confirmed.
-                        </p>
-
-                        {/* Premium Summary Card */}
-                        <motion.div
-                            className="w-full max-w-sm bg-white/80 backdrop-blur-xl rounded-[2rem] p-6 shadow-xl border border-white/50 ring-1 ring-slate-100"
-                        >
-                            <div className="flex items-center justify-between mb-6">
-                                <div className="flex items-center gap-4">
-                                    <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100">
-                                        {/* Abstract Bank Icon */}
-                                        <svg className="w-6 h-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                                        </svg>
-                                    </div>
-                                    <div className="text-left">
-                                        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Beneficiary</p>
-                                        <p className="text-lg font-bold text-slate-900">Air Peace Ltd</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent w-full mb-6"></div>
-
-                            <div className="flex flex-col items-center justify-center">
-                                <span className="text-sm font-medium text-slate-400 mb-1">Total Amount</span>
-                                <span className="text-4xl font-black text-slate-900 tracking-tight">£550.00</span>
-                            </div>
-                        </motion.div>
                     </motion.div>
                 ) : (
                     <motion.div
