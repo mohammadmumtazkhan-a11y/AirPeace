@@ -128,7 +128,8 @@ const DEMO_SCENARIOS: DemoScenario[] = [
   { id: 'new-personal-success', label: 'Personal — Success', userType: 'NEW', accountType: 'PERSONAL', expectedOutcome: 'SUCCESS', description: 'New user paying via personal account. Happy path.' },
   { id: 'new-personal-mismatch', label: 'Personal — Name Mismatch', userType: 'NEW', accountType: 'PERSONAL', expectedOutcome: 'MISMATCH', description: 'Payment succeeds but bank-account name mismatches payer profile. Needs retry/correction.' },
   { id: 'new-company-success', label: 'Company — Success', userType: 'NEW', accountType: 'COMPANY', expectedOutcome: 'SUCCESS', description: 'New user paying via company account. Happy path.' },
-  { id: 'new-company-pending', label: 'Company — Pending Screening', userType: 'NEW', accountType: 'COMPANY', expectedOutcome: 'PENDING', description: 'Transaction flagged for manual compliance screening timeouts.' },
+  { id: 'new-company-mismatch', label: 'Company — Name Mismatch', userType: 'NEW', accountType: 'COMPANY', expectedOutcome: 'MISMATCH', description: 'New company user triggers name mismatch upon payment.' },
+  { id: 'new-company-insufficient', label: 'Company — Insufficient Funds', userType: 'NEW', accountType: 'COMPANY', expectedOutcome: 'INSUFFICIENT_FUNDS', description: 'New company user fails due to insufficient balance.' },
   
   { id: 'reg-personal-success', label: 'Registered Personal — Success', userType: 'REGISTERED', accountType: 'PERSONAL', expectedOutcome: 'SUCCESS', description: 'Returning personal user recognised by email. Skips form.' },
   { id: 'reg-personal-mismatch', label: 'Registered Personal — Name Mismatch', userType: 'REGISTERED', accountType: 'PERSONAL', expectedOutcome: 'MISMATCH', description: 'Returning personal user triggers mismatch upon payment.' },

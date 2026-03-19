@@ -81,8 +81,8 @@ test.describe('AirPeace Payment Flow - Vibe Coding Brief', () => {
     await expect(page.getByText('Payment successful')).toBeVisible({ timeout: 15000 });
   });
 
-  test('Company — Pending Screening', async ({ page }) => {
-    await page.getByText('Company — Pending Screening', { exact: true }).click();
+  test('Company — Name Mismatch', async ({ page }) => {
+    await page.getByText('Company — Name Mismatch', { exact: true }).click();
     await page.getByText('Pay by Bank (instant transfer)').click();
     await page.getByRole('button', { name: /Make Payment/i }).click();
     await page.getByRole('button', { name: /Continue to Payment/i }).click();
@@ -98,7 +98,35 @@ test.describe('AirPeace Payment Flow - Vibe Coding Brief', () => {
     
     await page.getByRole('button', { name: /Review & Continue/i }).click();
     await expect(page.getByText('Validation in progress')).toBeVisible({ timeout: 15000 });
-    await expect(page.getByText('Payment Pending')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('Verification Failed')).toBeVisible({ timeout: 15000 });
+    
+    // Test clicking Restart
+    await page.getByRole('button', { name: /Restart with new payer details/i }).click();
+    await expect(page.getByText('Payer Onboarding Information')).toBeVisible();
+  });
+
+  test('Company — Insufficient Funds', async ({ page }) => {
+    await page.getByText('Company — Insufficient Funds', { exact: true }).click();
+    await page.getByText('Pay by Bank (instant transfer)').click();
+    await page.getByRole('button', { name: /Make Payment/i }).click();
+    await page.getByRole('button', { name: /Continue to Payment/i }).click();
+    
+    await handleMandatoryModal(page);
+    
+    await page.getByPlaceholder('Enter your full legal name').fill('Some Name');
+    await page.getByPlaceholder('name@company.com').fill('a@b.com');
+    await page.getByPlaceholder('E.g. RC 123654').fill('1234');
+    await expect(page.getByText('Acme Limited')).toBeVisible();
+    await page.locator('select').selectOption({ label: 'John Doe' });
+    await expect(page.getByText('Director Verified')).toBeVisible();
+    
+    await page.getByRole('button', { name: /Review & Continue/i }).click();
+    await expect(page.getByText('Validation in progress')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('Payment Declined')).toBeVisible({ timeout: 15000 });
+    
+    // Test clicking Retry
+    await page.getByRole('button', { name: /Retry with another bank account/i }).click();
+    await expect(page.getByText('Redirecting to your bank...')).toBeVisible();
   });
 
   test('Registered Personal — Success', async ({ page }) => {
