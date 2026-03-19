@@ -497,7 +497,7 @@ function ScenarioSelector({ scenarios, onSelect }: { scenarios: DemoScenario[]; 
       <div className="text-center">
         <p className="text-[28px] font-black italic leading-none text-[#2a5f9e]">AIR PEACE</p>
         <p className="mt-1 text-[10px] font-semibold italic text-[#be4d44]">...your peace, our goal</p>
-        <h1 className="mt-6 text-[22px] font-bold text-white">MITO v3 Vibe Coding Prototype</h1>
+        <h1 className="mt-6 text-[22px] font-bold text-white">Mito.Money Payment Pages Flow</h1>
       </div>
 
       <div className="mt-8">
