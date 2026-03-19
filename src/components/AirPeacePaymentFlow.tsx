@@ -34,12 +34,12 @@ type Stage =
   | 'processing'
   | 'validation'
   | 'success'
-  | 'mismatch'
+  | 'failure'
   | 'pending';
 
 type AccountType = 'PERSONAL' | 'COMPANY';
 type UserType = 'NEW' | 'REGISTERED';
-type ExpectedOutcome = 'SUCCESS' | 'MISMATCH' | 'PENDING';
+type ExpectedOutcome = 'SUCCESS' | 'MISMATCH' | 'INSUFFICIENT_FUNDS' | 'PENDING';
 
 interface PayerDetails {
   fullName: string;
@@ -129,8 +129,12 @@ const DEMO_SCENARIOS: DemoScenario[] = [
   { id: 'new-personal-mismatch', label: 'Personal — Name Mismatch', userType: 'NEW', accountType: 'PERSONAL', expectedOutcome: 'MISMATCH', description: 'Payment succeeds but bank-account name mismatches payer profile. Needs retry/correction.' },
   { id: 'new-company-success', label: 'Company — Success', userType: 'NEW', accountType: 'COMPANY', expectedOutcome: 'SUCCESS', description: 'New user paying via company account. Happy path.' },
   { id: 'new-company-pending', label: 'Company — Pending Screening', userType: 'NEW', accountType: 'COMPANY', expectedOutcome: 'PENDING', description: 'Transaction flagged for manual compliance screening timeouts.' },
+  
   { id: 'reg-personal-success', label: 'Registered Personal — Success', userType: 'REGISTERED', accountType: 'PERSONAL', expectedOutcome: 'SUCCESS', description: 'Returning personal user recognised by email. Skips form.' },
+  { id: 'reg-personal-mismatch', label: 'Registered Personal — Name Mismatch', userType: 'REGISTERED', accountType: 'PERSONAL', expectedOutcome: 'MISMATCH', description: 'Returning personal user triggers mismatch upon payment.' },
+  { id: 'reg-company-success', label: 'Registered Company — Success', userType: 'REGISTERED', accountType: 'COMPANY', expectedOutcome: 'SUCCESS', description: 'Returning company user paying successfully. Happy path.' },
   { id: 'reg-company-mismatch', label: 'Registered Company — Mismatch', userType: 'REGISTERED', accountType: 'COMPANY', expectedOutcome: 'MISMATCH', description: 'Returning company user triggers mismatch upon payment.' },
+  { id: 'reg-company-insufficient', label: 'Registered Company — Insufficient Funds', userType: 'REGISTERED', accountType: 'COMPANY', expectedOutcome: 'INSUFFICIENT_FUNDS', description: 'Returning company user fails due to insufficient balance.' },
 ];
 
 const pageVariants = {
@@ -347,7 +351,7 @@ export default function AirPeacePaymentFlow() {
     if (stage !== 'validation') return;
     const id = setTimeout(() => {
       if (expectedOutcome === 'SUCCESS') setStage('success');
-      else if (expectedOutcome === 'MISMATCH') setStage('mismatch');
+      else if (expectedOutcome === 'MISMATCH' || expectedOutcome === 'INSUFFICIENT_FUNDS') setStage('failure');
       else setStage('pending');
     }, 3500);
     return () => clearTimeout(id);
@@ -458,15 +462,19 @@ export default function AirPeacePaymentFlow() {
             <motion.div key="success" {...pageVariants}><SuccessScreen onRestart={handleRestart} /></motion.div>
           )}
           
-          {stage === 'mismatch' && (
-            <motion.div key="mismatch" {...pageVariants}>
-              <MismatchScreen onRetryBank={() => setStage('processing')} onRestartNew={() => {
-                setExpectedOutcome('SUCCESS'); // For demo loop
-                setUserType('NEW');
-                setPayer({ ...EMPTY_PAYER });
-                setHasAcknowledgedWarning(false);
-                setStage('details');
-              }} />
+          {stage === 'failure' && (
+            <motion.div key="failure" {...pageVariants}>
+              <FailureScreen 
+                reason={expectedOutcome}
+                onRetryBank={() => setStage('processing')} 
+                onRestartNew={() => {
+                  setExpectedOutcome('SUCCESS'); // For demo loop
+                  setUserType('NEW');
+                  setPayer({ ...EMPTY_PAYER });
+                  setHasAcknowledgedWarning(false);
+                  setStage('details');
+                }} 
+              />
             </motion.div>
           )}
           
@@ -751,16 +759,33 @@ function SuccessScreen({ onRestart }: any) {
   );
 }
 
-function MismatchScreen({ onRetryBank, onRestartNew }: any) {
+function FailureScreen({ reason, onRetryBank, onRestartNew }: any) {
+  const isMismatch = reason === 'MISMATCH';
+  
+  const title = isMismatch ? "Verification Failed" : "Payment Declined";
+  const message = isMismatch 
+    ? "The bank account name does not match the payer profile you registered. Please restart with matching details."
+    : "Transaction declined due to insufficient funds. Please try another bank account with sufficient balance.";
+    
   return (
     <section className="px-3 pb-8">
-      <div className="overflow-hidden rounded-xl bg-white px-5 py-8 text-center border-t-4 border-red-500">
+      <div className="overflow-hidden rounded-xl bg-white px-5 py-8 text-center border-t-4 border-red-500 shadow-sm">
         <X className="mx-auto h-12 w-12 text-red-500 bg-red-50 rounded-full p-2 mb-4" />
-        <h2 className="text-[20px] font-bold text-[#333]">Payment Unsuccessful</h2>
-        <p className="mt-2 text-[13px] text-[#666]">The name on your bank account <b>does not match</b> the payer profile you registered.</p>
+        <h2 className="text-[20px] font-bold text-[#333]">{title}</h2>
+        <p className="mt-2 text-[13px] text-[#666] leading-relaxed">{message}</p>
+        
         <div className="mt-6 space-y-3">
-          <button onClick={onRetryBank} className="w-full rounded-lg bg-[#333] py-3 text-[13px] text-white flex items-center justify-center gap-2"><RefreshCcw size={15}/> Retry with correct bank account</button>
-          <button onClick={onRestartNew} className="w-full rounded-lg border border-[#d5d5d5] py-3 text-[13px] flex items-center justify-center gap-2"><FileEdit size={15}/> Restart with new payer details</button>
+          {reason === 'INSUFFICIENT_FUNDS' && (
+            <button onClick={onRetryBank} className="w-full rounded-lg bg-[#333] hover:bg-[#222] py-3 text-[13px] text-white flex items-center justify-center gap-2">
+              <RefreshCcw size={15}/> Retry with another bank account
+            </button>
+          )}
+          
+          {isMismatch && (
+            <button onClick={onRestartNew} className="w-full rounded-lg border border-[#d5d5d5] hover:bg-[#fafafa] py-3 text-[13px] text-[#333] flex items-center justify-center gap-2">
+              <FileEdit size={15}/> Restart with new payer details
+            </button>
+          )}
         </div>
       </div>
     </section>

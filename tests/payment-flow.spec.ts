@@ -53,7 +53,7 @@ test.describe('AirPeace Payment Flow - Vibe Coding Brief', () => {
     await page.getByRole('button', { name: /Review & Continue/i }).click();
     
     await expect(page.getByText('Validation in progress')).toBeVisible({ timeout: 15000 });
-    await expect(page.getByText('Payment Unsuccessful')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('Verification Failed')).toBeVisible({ timeout: 15000 });
     await expect(page.getByText('does not match')).toBeVisible();
     
     // Test clicking Restart
@@ -121,8 +121,8 @@ test.describe('AirPeace Payment Flow - Vibe Coding Brief', () => {
     await expect(page.getByText('Payment successful')).toBeVisible({ timeout: 15000 });
   });
 
-  test('Registered Company — Mismatch', async ({ page }) => {
-    await page.getByText('Registered Company — Mismatch', { exact: true }).first().click();
+  test('Registered Company — Insufficient Funds', async ({ page }) => {
+    await page.getByText('Registered Company — Insufficient Funds', { exact: true }).first().click();
     await page.getByText('Pay by Bank (instant transfer)').click();
     await page.getByRole('button', { name: /Make Payment/i }).click();
     await page.getByRole('button', { name: /Continue to Payment/i }).click();
@@ -136,10 +136,46 @@ test.describe('AirPeace Payment Flow - Vibe Coding Brief', () => {
     await page.getByRole('button', { name: /Confirm & Pay/i }).click();
     
     await expect(page.getByText('Validation in progress')).toBeVisible({ timeout: 15000 });
-    await expect(page.getByText('Payment Unsuccessful')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('Payment Declined')).toBeVisible({ timeout: 15000 });
     
     // Test clicking Retry
-    await page.getByRole('button', { name: /Retry with correct bank account/i }).click();
+    await page.getByRole('button', { name: /Retry with another bank account/i }).click();
     await expect(page.getByText('Redirecting to your bank...')).toBeVisible();
+  });
+
+  test('Registered Company — Success', async ({ page }) => {
+    await page.getByText('Registered Company — Success', { exact: true }).first().click();
+    await page.getByText('Pay by Bank (instant transfer)').click();
+    await page.getByRole('button', { name: /Make Payment/i }).click();
+    await page.getByRole('button', { name: /Continue to Payment/i }).click();
+    
+    await expect(page.getByText('Welcome back!')).toBeVisible();
+    await page.getByRole('button', { name: /Continue with these details/i }).click();
+    
+    await handleMandatoryModal(page);
+    
+    await expect(page.getByText('Confirm your payer details')).toBeVisible();
+    await page.getByRole('button', { name: /Confirm & Pay/i }).click();
+    
+    await expect(page.getByText('Validation in progress')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('Payment successful')).toBeVisible({ timeout: 15000 });
+  });
+
+  test('Registered Personal — Name Mismatch', async ({ page }) => {
+    await page.getByText('Registered Personal — Name Mismatch', { exact: true }).first().click();
+    await page.getByText('Pay by Bank (instant transfer)').click();
+    await page.getByRole('button', { name: /Make Payment/i }).click();
+    await page.getByRole('button', { name: /Continue to Payment/i }).click();
+    
+    await expect(page.getByText('Welcome back!')).toBeVisible();
+    await page.getByRole('button', { name: /Continue with these details/i }).click();
+    
+    await handleMandatoryModal(page);
+    
+    await expect(page.getByText('Confirm your payer details')).toBeVisible();
+    await page.getByRole('button', { name: /Confirm & Pay/i }).click();
+    
+    await expect(page.getByText('Validation in progress')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('Verification Failed')).toBeVisible({ timeout: 15000 });
   });
 });
