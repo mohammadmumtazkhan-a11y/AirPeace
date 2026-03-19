@@ -1048,7 +1048,7 @@ function ProcessingScreen({ timer, isUrgent }: { timer: string; isUrgent: boolea
         </div>
         <div className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-[#999]">
           <ShieldCheck size={12} />
-          <span>Secured by MITO</span>
+          <span>Secured by Mito.Money</span>
         </div>
       </div>
     </section>
