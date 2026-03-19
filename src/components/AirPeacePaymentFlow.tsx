@@ -375,12 +375,13 @@ export default function AirPeacePaymentFlow() {
     if (stage !== 'received') return;
     const id = setTimeout(() => {
       if      (expectedOutcome === 'SUCCESS')            setStage('success');
-      else if (expectedOutcome === 'MISMATCH')           { setBankAccountName(MOCK_MISMATCH_BANK_NAME); setStage('mismatch'); }
+      else if (expectedOutcome === 'MISMATCH' && accountType === 'PERSONAL') { setBankAccountName(MOCK_MISMATCH_BANK_NAME); setStage('mismatch'); }
+      else if (expectedOutcome === 'MISMATCH' && accountType === 'COMPANY')  setStage('success'); // Company has no mismatch — always approve
       else if (expectedOutcome === 'INSUFFICIENT_FUNDS') setStage('failure');
       else                                               setStage('pending');
     }, 5000);
     return () => clearTimeout(id);
-  }, [stage, expectedOutcome]);
+  }, [stage, expectedOutcome, accountType]);
 
   // ---- 15-second auto-redirect on success ----
   useEffect(() => {
