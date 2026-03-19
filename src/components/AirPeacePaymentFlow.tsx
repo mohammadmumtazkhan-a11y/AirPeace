@@ -25,17 +25,17 @@ import {
 // TYPES & CONSTANTS
 // ==========================================
 type Stage =
-  | 'scenario'       // Demo scenario picker
-  | 'method'         // Payment method selection
-  | 'summary'        // Transaction summary
-  | 'recognition'    // Returning user recognition
-  | 'details'        // KYC form (new user full form)
-  | 'review'         // Returning user review (pre-filled, read-only)
-  | 'processing'     // Plaid handoff (payment_initiated)
-  | 'validation'     // validation_in_progress
-  | 'success'        // matched_success
-  | 'mismatch'       // name_mismatch
-  | 'pending';       // pending_screening
+  | 'scenario'
+  | 'method'
+  | 'summary'
+  | 'recognition'
+  | 'details'
+  | 'review'
+  | 'processing'
+  | 'validation'
+  | 'success'
+  | 'mismatch'
+  | 'pending';
 
 type AccountType = 'PERSONAL' | 'COMPANY';
 type UserType = 'NEW' | 'REGISTERED';
@@ -125,59 +125,14 @@ const MOCK_COMPANY_DATA = {
 const MAX_ATTEMPTS = 3;
 
 const DEMO_SCENARIOS: DemoScenario[] = [
-  {
-    id: 'new-personal-success',
-    label: 'Personal — Success',
-    userType: 'NEW',
-    accountType: 'PERSONAL',
-    expectedOutcome: 'SUCCESS',
-    description: 'New user paying via personal account. Happy path.',
-  },
-  {
-    id: 'new-personal-mismatch',
-    label: 'Personal — Name Mismatch',
-    userType: 'NEW',
-    accountType: 'PERSONAL',
-    expectedOutcome: 'MISMATCH',
-    description: 'Payment succeeds but bank-account name mismatches payer profile. Needs retry/correction.',
-  },
-  {
-    id: 'new-company-success',
-    label: 'Company — Success',
-    userType: 'NEW',
-    accountType: 'COMPANY',
-    expectedOutcome: 'SUCCESS',
-    description: 'New user paying via company account. Happy path.',
-  },
-  {
-    id: 'new-company-pending',
-    label: 'Company — Pending Screening',
-    userType: 'NEW',
-    accountType: 'COMPANY',
-    expectedOutcome: 'PENDING',
-    description: 'Transaction flagged for manual compliance screening timeouts.',
-  },
-  {
-    id: 'reg-personal-success',
-    label: 'Registered Personal — Success',
-    userType: 'REGISTERED',
-    accountType: 'PERSONAL',
-    expectedOutcome: 'SUCCESS',
-    description: 'Returning personal user recognised by email. Skips form.',
-  },
-  {
-    id: 'reg-company-mismatch',
-    label: 'Registered Company — Mismatch',
-    userType: 'REGISTERED',
-    accountType: 'COMPANY',
-    expectedOutcome: 'MISMATCH',
-    description: 'Returning company user triggers mismatch upon payment.',
-  },
+  { id: 'new-personal-success', label: 'Personal — Success', userType: 'NEW', accountType: 'PERSONAL', expectedOutcome: 'SUCCESS', description: 'New user paying via personal account. Happy path.' },
+  { id: 'new-personal-mismatch', label: 'Personal — Name Mismatch', userType: 'NEW', accountType: 'PERSONAL', expectedOutcome: 'MISMATCH', description: 'Payment succeeds but bank-account name mismatches payer profile. Needs retry/correction.' },
+  { id: 'new-company-success', label: 'Company — Success', userType: 'NEW', accountType: 'COMPANY', expectedOutcome: 'SUCCESS', description: 'New user paying via company account. Happy path.' },
+  { id: 'new-company-pending', label: 'Company — Pending Screening', userType: 'NEW', accountType: 'COMPANY', expectedOutcome: 'PENDING', description: 'Transaction flagged for manual compliance screening timeouts.' },
+  { id: 'reg-personal-success', label: 'Registered Personal — Success', userType: 'REGISTERED', accountType: 'PERSONAL', expectedOutcome: 'SUCCESS', description: 'Returning personal user recognised by email. Skips form.' },
+  { id: 'reg-company-mismatch', label: 'Registered Company — Mismatch', userType: 'REGISTERED', accountType: 'COMPANY', expectedOutcome: 'MISMATCH', description: 'Returning company user triggers mismatch upon payment.' },
 ];
 
-// ==========================================
-// ANIMATION VARIANTS
-// ==========================================
 const pageVariants = {
   initial: { opacity: 0, y: 20 },
   animate: { opacity: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' } },
@@ -218,13 +173,12 @@ export default function AirPeacePaymentFlow() {
   const [editingField, setEditingField] = useState<string | null>(null);
   const [recognitionChecking, setRecognitionChecking] = useState(false);
   
-  const [bankConfirmChecked, setBankConfirmChecked] = useState(false);
+  const [hasAcknowledgedWarning, setHasAcknowledgedWarning] = useState(false);
   const [selectedScenario, setSelectedScenario] = useState<DemoScenario | null>(null);
 
   const toastIdRef = useRef(0);
   const companyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Countdown timer
   useEffect(() => {
     if (stage === 'scenario' || stage === 'method') return;
     const id = setInterval(() => setTimer((v) => (v > 0 ? v - 1 : 0)), 1000);
@@ -237,7 +191,6 @@ export default function AirPeacePaymentFlow() {
     return `${mm}:${ss}`;
   }, [timer]);
 
-  // Toast management
   const addToast = useCallback((text: string, type: 'error' | 'success' | 'info' = 'error') => {
     const id = ++toastIdRef.current;
     setToasts((prev) => [...prev, { id, text, type }]);
@@ -248,7 +201,6 @@ export default function AirPeacePaymentFlow() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  // Start scenario
   const handleStartScenario = useCallback((scenario: DemoScenario) => {
     setSelectedScenario(scenario);
     setUserType(scenario.userType);
@@ -263,25 +215,20 @@ export default function AirPeacePaymentFlow() {
     setDirectorLoading(false);
     setEditingField(null);
     setIsVerifying(false);
-    setBankConfirmChecked(false);
+    setHasAcknowledgedWarning(false);
 
-    if (scenario.userType === 'NEW') {
-      setPayer({ ...EMPTY_PAYER });
-    } else {
-      setPayer(getRegisteredData(scenario.accountType));
-    }
+    if (scenario.userType === 'NEW') setPayer({ ...EMPTY_PAYER });
+    else setPayer(getRegisteredData(scenario.accountType));
 
     setStage('method');
   }, []);
 
-  // Reset to scenario picker
   const handleRestart = useCallback(() => {
     setStage('scenario');
     setSelectedScenario(null);
     setToasts([]);
   }, []);
 
-  // After summary, fork based on user type
   const handleAfterSummary = useCallback(() => {
     if (userType === 'REGISTERED') {
       setRecognitionChecking(true);
@@ -291,7 +238,6 @@ export default function AirPeacePaymentFlow() {
     }
   }, [userType]);
 
-  // Account type change
   const handleAccountTypeChange = useCallback((type: AccountType) => {
     setAccountType(type);
     setFieldErrors({});
@@ -300,13 +246,7 @@ export default function AirPeacePaymentFlow() {
     setCompanyLoading(false);
     setDirectorLoaded(false);
     setDirectorLoading(false);
-    setPayer((prev) => ({
-      ...prev,
-      companyRegNo: '',
-      companyName: '',
-      companyAddress: '',
-      directorName: '',
-    }));
+    setPayer((prev) => ({ ...prev, companyRegNo: '', companyName: '', companyAddress: '', directorName: '' }));
   }, []);
 
   const handleCompanyRegChange = useCallback((val: string) => {
@@ -320,11 +260,7 @@ export default function AirPeacePaymentFlow() {
       companyTimerRef.current = setTimeout(() => {
         setCompanyLoading(false);
         setCompanyLoaded(true);
-        setPayer((prev) => ({
-          ...prev,
-          companyName: MOCK_COMPANY_DATA.companyName,
-          companyAddress: MOCK_COMPANY_DATA.companyAddress,
-        }));
+        setPayer((prev) => ({ ...prev, companyName: MOCK_COMPANY_DATA.companyName, companyAddress: MOCK_COMPANY_DATA.companyAddress }));
       }, 1200);
     } else {
       setCompanyLoading(false);
@@ -343,7 +279,6 @@ export default function AirPeacePaymentFlow() {
     setFieldErrors((prev) => { const next = { ...prev }; delete next[field]; return next; });
   }, []);
 
-  // KYC Verification before Bank Handoff
   const handleSubmitDetails = useCallback(async () => {
     if (userType === 'NEW') {
       const errors: FieldErrors = {};
@@ -369,18 +304,12 @@ export default function AirPeacePaymentFlow() {
       }
     }
     
-    if (!bankConfirmChecked) {
-      addToast('You must confirm that the payer name matches the bank account name.');
-      return;
-    }
-
     setIsVerifying(true);
     setFieldErrors({});
     await new Promise((resolve) => setTimeout(resolve, 1500));
     
-    // Mini-KYC simulation
     const nameToCheck = accountType === 'PERSONAL' ? payer.fullName.toLowerCase() : payer.directorName.toLowerCase();
-    if (nameToCheck.includes('fail KYC')) {
+    if (nameToCheck.includes('fail kyc')) {
       const remaining = attemptsRemaining - 1;
       setAttemptsRemaining(remaining);
       if (remaining <= 0) {
@@ -397,9 +326,15 @@ export default function AirPeacePaymentFlow() {
 
     setIsVerifying(false);
     setStage('processing');
-  }, [userType, accountType, payer, attemptsRemaining, companyLoaded, directorLoaded, bankConfirmChecked, addToast]);
+  }, [userType, accountType, payer, attemptsRemaining, companyLoaded, directorLoaded, addToast]);
 
-  // Stage: Processing (Plaid) -> Validation
+  useEffect(() => {
+    if (stage === 'recognition' && recognitionChecking) {
+      const id = setTimeout(() => setRecognitionChecking(false), 1500);
+      return () => clearTimeout(id);
+    }
+  }, [stage, recognitionChecking]);
+
   useEffect(() => {
     if (stage !== 'processing') return;
     const id = setTimeout(() => {
@@ -408,15 +343,6 @@ export default function AirPeacePaymentFlow() {
     return () => clearTimeout(id);
   }, [stage]);
 
-  // Stage: Recognition checking
-  useEffect(() => {
-    if (stage === 'recognition' && recognitionChecking) {
-      const id = setTimeout(() => setRecognitionChecking(false), 1500);
-      return () => clearTimeout(id);
-    }
-  }, [stage, recognitionChecking]);
-
-  // Stage: Validation -> Outcome
   useEffect(() => {
     if (stage !== 'validation') return;
     const id = setTimeout(() => {
@@ -427,9 +353,8 @@ export default function AirPeacePaymentFlow() {
     return () => clearTimeout(id);
   }, [stage, expectedOutcome]);
 
-  // ==========================================
-  // RENDER ROUTING
-  // ==========================================
+  const showWarningModal = (stage === 'details' || stage === 'review') && !hasAcknowledgedWarning;
+
   if (stage === 'scenario') return <main className="min-h-screen bg-[#1a1a2e]"><ScenarioSelector scenarios={DEMO_SCENARIOS} onSelect={handleStartScenario} /></main>;
   if (stage === 'method') return <main className="min-h-screen bg-[#ebeced]"><MethodSelectionScreen onContinue={() => setStage('summary')} onBack={handleRestart} scenario={selectedScenario} /></main>;
 
@@ -460,9 +385,16 @@ export default function AirPeacePaymentFlow() {
           </AnimatePresence>
         </div>
 
+        {/* Mandatory Warning Modal */}
+        <AnimatePresence>
+          {showWarningModal && (
+            <ImportantInformationModal onConfirm={() => setHasAcknowledgedWarning(true)} />
+          )}
+        </AnimatePresence>
+
         <AnimatePresence>
           {isVerifying && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40">
               <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="flex flex-col items-center gap-3 rounded-2xl bg-white px-8 py-6 shadow-xl">
                 <Loader2 className="h-10 w-10 animate-spin text-[#ff4c16]" />
                 <p className="text-[14px] font-semibold text-[#444]">Verifying your details...</p>
@@ -484,11 +416,7 @@ export default function AirPeacePaymentFlow() {
               <RecognitionScreen
                 payer={payer} accountType={accountType} isChecking={recognitionChecking}
                 onContinueWithStored={() => setStage('review')}
-                onUseDifferent={() => {
-                  setUserType('NEW');
-                  setPayer({ ...EMPTY_PAYER });
-                  setStage('details');
-                }}
+                onUseDifferent={() => { setUserType('NEW'); setPayer({ ...EMPTY_PAYER }); setStage('details'); }}
               />
             </motion.div>
           )}
@@ -498,8 +426,7 @@ export default function AirPeacePaymentFlow() {
               <DetailsScreen
                 accountType={accountType} payer={payer} fieldErrors={fieldErrors} attemptsRemaining={attemptsRemaining}
                 companyLoading={companyLoading} companyLoaded={companyLoaded} directorLoading={directorLoading} directorLoaded={directorLoaded}
-                editingField={editingField} bankConfirmChecked={bankConfirmChecked}
-                onBankConfirmChange={setBankConfirmChecked}
+                editingField={editingField}
                 onChangeAccount={handleAccountTypeChange} onFieldChange={handleFieldChange} onCompanyRegChange={handleCompanyRegChange}
                 onDirectorSelect={handleDirectorSelect} onEditField={setEditingField} onContinue={handleSubmitDetails} onBack={() => setStage('summary')}
               />
@@ -509,8 +436,7 @@ export default function AirPeacePaymentFlow() {
           {stage === 'review' && (
             <motion.div key="review" {...pageVariants} className="flex-1">
               <ReviewScreen
-                payer={payer} accountType={accountType} attemptsRemaining={attemptsRemaining} bankConfirmChecked={bankConfirmChecked}
-                onBankConfirmChange={setBankConfirmChecked} onSubmit={handleSubmitDetails}
+                payer={payer} accountType={accountType} attemptsRemaining={attemptsRemaining} onSubmit={handleSubmitDetails}
                 onChangeDetails={() => { setUserType('NEW'); setStage('details'); }} onBack={() => setStage('recognition')}
               />
             </motion.div>
@@ -535,10 +461,10 @@ export default function AirPeacePaymentFlow() {
           {stage === 'mismatch' && (
             <motion.div key="mismatch" {...pageVariants}>
               <MismatchScreen onRetryBank={() => setStage('processing')} onRestartNew={() => {
-                setExpectedOutcome('SUCCESS'); // For the demo loop
+                setExpectedOutcome('SUCCESS'); // For demo loop
                 setUserType('NEW');
                 setPayer({ ...EMPTY_PAYER });
-                setBankConfirmChecked(false);
+                setHasAcknowledgedWarning(false);
                 setStage('details');
               }} />
             </motion.div>
@@ -563,14 +489,13 @@ function ScenarioSelector({ scenarios, onSelect }: { scenarios: DemoScenario[]; 
         <p className="text-[28px] font-black italic leading-none text-[#2a5f9e]">AIR PEACE</p>
         <p className="mt-1 text-[10px] font-semibold italic text-[#be4d44]">...your peace, our goal</p>
         <h1 className="mt-6 text-[22px] font-bold text-white">MITO v3 Vibe Coding Prototype</h1>
-        <p className="mt-1 text-[13px] text-white/60">Select a payment scenario to preview the outcomes</p>
       </div>
 
       <div className="mt-8">
         <div className="mb-3 flex items-center gap-2"><User size={16} className="text-[#ff4c16]" /><h2 className="text-[15px] font-bold text-white">New User</h2></div>
         <div className="grid gap-2">
           {scenarios.filter(s => s.userType === 'NEW').map(s => (
-            <motion.button key={s.id} onClick={() => onSelect(s)} whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-left backdrop-blur-sm transition-colors hover:bg-white/10">
+            <motion.button key={s.id} onClick={() => onSelect(s)} whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-left">
               <p className="text-[13px] font-semibold text-white">{s.label}</p>
               <p className="mt-0.5 text-[11px] text-white/50">{s.description}</p>
             </motion.button>
@@ -582,7 +507,7 @@ function ScenarioSelector({ scenarios, onSelect }: { scenarios: DemoScenario[]; 
         <div className="mb-3 flex items-center gap-2"><UserCheck size={16} className="text-green-400" /><h2 className="text-[15px] font-bold text-white">Registered User</h2></div>
         <div className="grid gap-2">
           {scenarios.filter(s => s.userType === 'REGISTERED').map(s => (
-            <motion.button key={s.id} onClick={() => onSelect(s)} whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }} className="rounded-xl border border-green-500/20 bg-green-500/5 px-4 py-3 text-left backdrop-blur-sm transition-colors hover:bg-green-500/10">
+            <motion.button key={s.id} onClick={() => onSelect(s)} whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }} className="rounded-xl border border-green-500/20 bg-green-500/5 px-4 py-3 text-left">
               <p className="text-[13px] font-semibold text-white">{s.label}</p>
               <p className="mt-0.5 text-[11px] text-white/50">{s.description}</p>
             </motion.button>
@@ -612,15 +537,9 @@ function MethodSelectionScreen({ onContinue, onBack, scenario }: { onContinue: (
         )}
         <h2 className="text-[22px] font-semibold text-[#1f1f1f] sm:text-[31px]">Please Choose a Payment Method</h2>
         <div className="mt-5 space-y-1.5">
-          {[{ id: 'paystack', title: 'Paystack' }, { id: 'bank', title: 'Pay by Bank (instant transfer)', highlight: true }, { id: 'card', title: 'Pay with Card' }].map(m => (
-            <motion.button key={m.id} onClick={() => setSelectedMethod(m.id)} whileTap={{ scale: 0.99 }}
-              className={`w-full rounded-[4px] border bg-white px-3 py-3 text-left transition-all ${selectedMethod === m.id ? 'border-[#89a9d2] shadow-sm' : m.highlight ? 'border-[#ff7043]' : 'border-[#d8e0e6]'}`}>
-              <div className="flex items-center gap-3">
-                <div className="flex-1">
-                  <p className={`text-[16px] font-semibold sm:text-[20px] ${m.highlight && selectedMethod !== m.id ? 'text-[#e64a19]' : 'text-[#2f2f2f]'}`}>{m.title}</p>
-                </div>
-                <ChevronRight size={16} className="text-[#202020]" />
-              </div>
+          {[{ id: 'paystack', title: 'Paystack' }, { id: 'bank', title: 'Pay by Bank (instant transfer)', highlight: true }].map(m => (
+            <motion.button key={m.id} onClick={() => setSelectedMethod(m.id)} whileTap={{ scale: 0.99 }} className={`w-full rounded-[4px] border bg-white px-3 py-3 text-left ${selectedMethod === m.id ? 'border-[#89a9d2] shadow-sm' : m.highlight ? 'border-[#ff7043]' : 'border-[#d8e0e6]'}`}>
+              <div className="flex items-center justify-between"><p className={`text-[16px] font-semibold sm:text-[20px] ${m.highlight && selectedMethod !== m.id ? 'text-[#e64a19]' : 'text-[#2f2f2f]'}`}>{m.title}</p><ChevronRight size={16} className="text-[#202020]" /></div>
             </motion.button>
           ))}
         </div>
@@ -628,8 +547,7 @@ function MethodSelectionScreen({ onContinue, onBack, scenario }: { onContinue: (
           <button type="button" onClick={onBack} className="rounded-[4px] border border-[#6885a6] bg-[#f8fbff] px-10 py-2.5 text-[12px] font-semibold text-[#3f5f81]">BACK</button>
           <div className="flex items-center justify-between gap-4 sm:gap-6">
             <p className="text-[13px] font-semibold text-[#1f2d3d]">TOTAL £550.00</p>
-            <motion.button type="button" disabled={!canContinue} onClick={onContinue} whileTap={canContinue ? { scale: 0.97 } : {}}
-              className={`rounded-[4px] px-8 py-2.5 text-[12px] font-semibold text-white transition-colors ${canContinue ? 'bg-[#3457a5] hover:bg-[#2a4a8e]' : 'cursor-not-allowed bg-[#9aa8c9]'}`}>Make Payment</motion.button>
+            <motion.button type="button" disabled={!canContinue} onClick={onContinue} whileTap={canContinue ? { scale: 0.97 } : {}} className={`rounded-[4px] px-8 py-2.5 text-[12px] font-semibold text-white ${canContinue ? 'bg-[#3457a5]' : 'bg-[#9aa8c9]'}`}>Make Payment</motion.button>
           </div>
         </div>
       </div>
@@ -651,17 +569,13 @@ function SummaryScreen({ timer, onContinue }: { timer: string; onContinue: () =>
           <KV label="Total" value="£ 550.00" bold />
           <KV label="Paying to" value="Air Peace via PLAID" />
         </div>
-        <motion.button onClick={onContinue} whileTap={{ scale: 0.98 }} className="mt-8 w-full rounded-lg bg-[#ff4c16] py-3.5 text-[18px] font-bold text-white shadow-md transition-colors hover:bg-[#e64516]">Continue to Payment</motion.button>
+        <motion.button onClick={onContinue} whileTap={{ scale: 0.98 }} className="mt-8 w-full rounded-lg bg-[#ff4c16] py-3.5 text-[18px] font-bold text-white">Continue to Payment</motion.button>
       </div>
     </section>
   );
 }
 
-function RecognitionScreen({
-  payer, accountType, isChecking, onContinueWithStored, onUseDifferent,
-}: {
-  payer: PayerDetails; accountType: AccountType; isChecking: boolean; onContinueWithStored: () => void; onUseDifferent: () => void;
-}) {
+function RecognitionScreen({ payer, accountType, isChecking, onContinueWithStored, onUseDifferent }: any) {
   if (isChecking) {
     return (
       <section className="px-3 pb-4">
@@ -690,19 +604,53 @@ function RecognitionScreen({
   );
 }
 
+// Modal component matching the user's styling exactly
+function ImportantInformationModal({ onConfirm }: { onConfirm: () => void }) {
+  const [checked, setChecked] = useState(false);
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+      <motion.div initial={{ scale: 0.95, y: 10 }} animate={{ scale: 1, y: 0 }} className="w-full max-w-[380px] rounded-lg bg-[#fffdf5] border-2 border-[#fce3a1] p-5 shadow-2xl">
+        
+        <div className="flex items-center gap-2">
+          <AlertCircle size={20} className="text-[#cca01d]" />
+          <h3 className="text-[17px] font-bold text-[#b08518]">Important Information</h3>
+        </div>
+        
+        <p className="mt-3 text-[14px] leading-relaxed text-[#73643b]">
+          To prevent payment rejection, the payer name on your profile <strong className="font-bold text-[#62532d]">must exactly match</strong> the name on the bank account you are about to use.
+        </p>
+        
+        <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-[6px] border border-[#fce3a1] bg-white p-3.5 shadow-sm transition-colors hover:bg-[#fafafa]">
+          <input 
+            type="checkbox" 
+            checked={checked} 
+            onChange={(e) => setChecked(e.target.checked)} 
+            className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 accent-[#cca01d] focus:ring-[#cca01d]" 
+          />
+          <span className="text-[14px] font-bold leading-snug text-[#1f2d3d]">
+            I confirm that the name provided matches the bank account name exactly.
+          </span>
+        </label>
+
+        <button 
+          onClick={onConfirm}
+          disabled={!checked}
+          className={`mt-5 w-full rounded-lg py-2.5 text-[15px] font-bold text-white transition-colors ${checked ? 'bg-[#ff4c16] hover:bg-[#e64516]' : 'bg-[#f4c2b3] cursor-not-allowed'}`}
+        >
+          Acknowledge
+        </button>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 function DetailsScreen({
-  accountType, payer, fieldErrors, attemptsRemaining, companyLoading, companyLoaded, directorLoading, directorLoaded, editingField, bankConfirmChecked,
-  onBankConfirmChange, onChangeAccount, onFieldChange, onCompanyRegChange, onDirectorSelect, onEditField, onContinue, onBack,
-}: {
-  accountType: AccountType; payer: PayerDetails; fieldErrors: FieldErrors; attemptsRemaining: number;
-  companyLoading: boolean; companyLoaded: boolean; directorLoading: boolean; directorLoaded: boolean; editingField: string | null; bankConfirmChecked: boolean;
-  onBankConfirmChange: (v: boolean) => void; onChangeAccount: (v: AccountType) => void; onFieldChange: (f: keyof PayerDetails, v: string) => void;
-  onCompanyRegChange: (v: string) => void; onDirectorSelect: (n: string) => void; onEditField: (f: string | null) => void; onContinue: () => void; onBack: () => void;
-}) {
+  accountType, payer, fieldErrors, attemptsRemaining, companyLoading, companyLoaded, directorLoading, directorLoaded, editingField,
+  onChangeAccount, onFieldChange, onCompanyRegChange, onDirectorSelect, onEditField, onContinue, onBack,
+}: any) {
   const isPersonal = accountType === 'PERSONAL';
-  const canContinue = isPersonal 
-    ? payer.fullName.trim().length > 0 && bankConfirmChecked
-    : directorLoaded && payer.fullName.trim().length > 0 && bankConfirmChecked;
+  const canContinue = isPersonal ? payer.fullName.trim().length > 0 : directorLoaded && payer.fullName.trim().length > 0;
 
   return (
     <section className="flex flex-col px-3 pb-4">
@@ -713,7 +661,6 @@ function DetailsScreen({
           <Info size={14} className="mt-0.5 flex-shrink-0" />
           <p>Please enter the details of the individual or company who is actually paying. This information is required for compliance onboarding.</p>
         </div>
-
         <p className="text-[12px] text-[#6e6e6e] mt-1">Select payer account type</p>
         <div className="mt-2 flex items-center gap-5">
           <RadioOption active={isPersonal} onClick={() => onChangeAccount('PERSONAL')} label="Personal" />
@@ -725,33 +672,22 @@ function DetailsScreen({
         <h3 className="text-[14px] font-semibold text-[#3a3a3a]">Payer Onboarding Information</h3>
         <AnimatePresence mode="wait">
           {isPersonal ? (
-            <motion.div key="personal" {...fadeIn}>
-              <PersonalForm payer={payer} fieldErrors={fieldErrors} editingField={editingField} onFieldChange={onFieldChange} onEditField={onEditField} />
-            </motion.div>
+            <motion.div key="personal" {...fadeIn}><PersonalForm payer={payer} fieldErrors={fieldErrors} editingField={editingField} onFieldChange={onFieldChange} onEditField={onEditField} /></motion.div>
           ) : (
-            <motion.div key="company" {...fadeIn}>
-              <CompanyForm payer={payer} fieldErrors={fieldErrors} companyLoading={companyLoading} companyLoaded={companyLoaded} directorLoading={directorLoading} directorLoaded={directorLoaded} onCompanyRegChange={onCompanyRegChange} onDirectorSelect={onDirectorSelect} onFieldChange={onFieldChange} />
-            </motion.div>
+            <motion.div key="company" {...fadeIn}><CompanyForm payer={payer} fieldErrors={fieldErrors} companyLoading={companyLoading} companyLoaded={companyLoaded} directorLoading={directorLoading} directorLoaded={directorLoaded} onCompanyRegChange={onCompanyRegChange} onDirectorSelect={onDirectorSelect} onFieldChange={onFieldChange} /></motion.div>
           )}
         </AnimatePresence>
       </Panel>
 
-      <BankConfirmationWarning checked={bankConfirmChecked} onChange={onBankConfirmChange} />
-
       <motion.button disabled={!canContinue} onClick={onContinue} whileTap={canContinue ? { scale: 0.98 } : {}}
-        className={`mt-3 w-full rounded-lg py-3 text-[18px] font-bold text-white shadow-sm transition-all ${canContinue ? 'bg-[#ff4c16] hover:bg-[#e64516]' : 'cursor-not-allowed bg-[#efb8a8]'}`}>
+        className={`mt-4 w-full rounded-lg py-3 text-[18px] font-bold text-white shadow-sm transition-all ${canContinue ? 'bg-[#ff4c16] hover:bg-[#e64516]' : 'cursor-not-allowed bg-[#efb8a8]'}`}>
         Review & Continue
       </motion.button>
     </section>
   );
 }
 
-function ReviewScreen({
-  payer, accountType, attemptsRemaining, bankConfirmChecked, onBankConfirmChange, onSubmit, onChangeDetails, onBack,
-}: {
-  payer: PayerDetails; accountType: AccountType; attemptsRemaining: number; bankConfirmChecked: boolean;
-  onBankConfirmChange: (v: boolean) => void; onSubmit: () => void; onChangeDetails: () => void; onBack: () => void;
-}) {
+function ReviewScreen({ payer, accountType, attemptsRemaining, onSubmit, onChangeDetails, onBack }: any) {
   const isCompany = accountType === 'COMPANY';
 
   return (
@@ -771,10 +707,7 @@ function ReviewScreen({
         <div className="mt-2 rounded-lg border border-green-200 bg-green-50/50 px-3 py-2 text-[11px] text-green-700 flex items-center gap-2"><Check size={14} />Verified profile active</div>
       </Panel>
 
-      <BankConfirmationWarning checked={bankConfirmChecked} onChange={onBankConfirmChange} />
-
-      <motion.button disabled={!bankConfirmChecked} onClick={onSubmit} whileTap={bankConfirmChecked ? { scale: 0.98 } : {}}
-        className={`mt-3 w-full rounded-lg py-3 text-[18px] font-bold text-white shadow-md transition-colors ${bankConfirmChecked ? 'bg-[#ff4c16] hover:bg-[#e64516]' : 'cursor-not-allowed bg-[#efb8a8]'}`}>
+      <motion.button onClick={onSubmit} whileTap={{ scale: 0.98 }} className="mt-4 w-full rounded-lg py-3 text-[18px] font-bold text-white shadow-md transition-colors bg-[#ff4c16] hover:bg-[#e64516]">
         Confirm & Pay
       </motion.button>
       <button onClick={onChangeDetails} className="mt-2 w-full rounded-lg border border-[#ccc] bg-white py-2.5 text-[13px] font-semibold text-[#666]">I want to use different payer details</button>
@@ -782,162 +715,137 @@ function ReviewScreen({
   );
 }
 
-function BankConfirmationWarning({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <div className="mt-4 rounded-lg border-2 border-[#ffecb3] bg-[#fffbf0] px-3 py-3 shadow-sm">
-      <h4 className="text-[13px] font-bold text-[#b38600] flex items-center gap-1.5"><AlertCircle size={15} /> Important Information</h4>
-      <p className="mt-1.5 text-[11px] text-[#7c6a2a] leading-relaxed">
-        To prevent payment rejection, the payer name on your profile <strong>must exactly match</strong> the name on the bank account you are about to use.
-      </p>
-      <label className="mt-3 flex items-start gap-2 cursor-pointer bg-white p-2 rounded border border-[#fae099]">
-        <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[#ff4c16] rounded" />
-        <span className="text-[12px] font-semibold text-[#333] leading-snug">
-          I confirm that the name provided matches the bank account name exactly.
-        </span>
-      </label>
-    </div>
-  );
-}
-
 // Post-payment States
-function ProcessingScreen({ timer, onBack }: { timer: string; onBack: () => void }) {
+function ProcessingScreen({ timer, onBack }: any) {
   return (
     <section className="px-3">
       <div className="overflow-hidden rounded-xl bg-white px-4 py-8 shadow-sm text-center">
         <Brand />
         <p className="mt-8 text-[13px] font-medium text-[#555]">Redirecting to your bank...</p>
         <Loader2 className="mx-auto mt-4 h-8 w-8 animate-spin text-[#ff4c16]" />
-        <p className="mt-6 text-[11px] text-[#888]">Please complete authorization securely within your banking app.</p>
       </div>
     </section>
   );
 }
 
-function ValidationScreen({ timer }: { timer: string }) {
+function ValidationScreen({ timer }: any) {
   return (
     <section className="px-3">
       <div className="overflow-hidden rounded-xl bg-white px-6 py-10 shadow-sm text-center space-y-4">
         <Loader2 className="mx-auto h-12 w-12 animate-spin text-[#2a5f9e]" />
         <h2 className="text-[20px] font-bold text-[#333]">Validation in progress</h2>
-        <p className="text-[13px] text-[#666]">Waiting for confirmation from the collection bank. Please do not close this window.</p>
       </div>
     </section>
   );
 }
 
-function SuccessScreen({ onRestart }: { onRestart: () => void }) {
+function SuccessScreen({ onRestart }: any) {
   return (
     <section className="px-3">
       <div className="overflow-hidden rounded-xl bg-white px-6 py-10 shadow-sm text-center">
-        <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="flex justify-center mb-4">
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-100"><Check className="h-8 w-8 text-green-600" /></div>
-        </motion.div>
+        <div className="flex justify-center mb-4"><div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-100"><Check className="h-8 w-8 text-green-600" /></div></div>
         <h2 className="text-[24px] font-bold text-[#333]">Payment successful</h2>
-        <p className="mt-2 text-[13px] text-[#666]">Your payment has been received successfully and your booking is being updated.</p>
-        <button onClick={onRestart} className="mt-8 w-full rounded-lg bg-[#f0f0f0] py-3 text-[14px] font-medium text-[#444]">Return to AirPeace</button>
+        <button onClick={onRestart} className="mt-8 w-full rounded-lg bg-[#f0f0f0] py-3 text-[14px]">Return</button>
       </div>
     </section>
   );
 }
 
-function MismatchScreen({ onRetryBank, onRestartNew }: { onRetryBank: () => void; onRestartNew: () => void }) {
+function MismatchScreen({ onRetryBank, onRestartNew }: any) {
   return (
     <section className="px-3 pb-8">
-      <div className="overflow-hidden rounded-xl bg-white px-5 py-8 shadow-sm text-center border-t-4 border-red-500">
+      <div className="overflow-hidden rounded-xl bg-white px-5 py-8 text-center border-t-4 border-red-500">
         <X className="mx-auto h-12 w-12 text-red-500 bg-red-50 rounded-full p-2 mb-4" />
         <h2 className="text-[20px] font-bold text-[#333]">Payment Unsuccessful</h2>
-        <p className="mt-2 text-[13px] text-[#666] leading-relaxed">
-          The name on your bank account <b>does not match</b> the payer profile you registered. To complete this transaction successfully, you must ensure both names match exactly.
-        </p>
+        <p className="mt-2 text-[13px] text-[#666]">The name on your bank account <b>does not match</b> the payer profile you registered.</p>
         <div className="mt-6 space-y-3">
-          <button onClick={onRetryBank} className="w-full rounded-lg bg-[#333] hover:bg-[#111] transition py-3 text-[13px] font-semibold text-white flex items-center justify-center gap-2">
-            <RefreshCcw size={15} /> Retry with correct bank account
-          </button>
-          <div className="flex items-center gap-2 text-[11px] text-[#999] uppercase font-semibold"><hr className="flex-1" /> OR <hr className="flex-1" /></div>
-          <button onClick={onRestartNew} className="w-full rounded-lg border border-[#d5d5d5] bg-white hover:bg-[#fafafa] transition py-3 text-[13px] font-semibold text-[#555] flex items-center justify-center gap-2">
-            <FileEdit size={15} /> Restart with new payer details
-          </button>
+          <button onClick={onRetryBank} className="w-full rounded-lg bg-[#333] py-3 text-[13px] text-white flex items-center justify-center gap-2"><RefreshCcw size={15}/> Retry with correct bank account</button>
+          <button onClick={onRestartNew} className="w-full rounded-lg border border-[#d5d5d5] py-3 text-[13px] flex items-center justify-center gap-2"><FileEdit size={15}/> Restart with new payer details</button>
         </div>
       </div>
     </section>
   );
 }
 
-function PendingScreen({ onRestart }: { onRestart: () => void }) {
+function PendingScreen({ onRestart }: any) {
   return (
     <section className="px-3">
-      <div className="overflow-hidden rounded-xl bg-white px-6 py-10 shadow-sm text-center">
+      <div className="overflow-hidden rounded-xl bg-white px-6 py-10 text-center">
         <Clock3 className="mx-auto h-12 w-12 text-[#b38600] bg-[#fffbf0] rounded-full p-2 mb-4" />
-        <h2 className="text-[20px] font-bold text-[#333]">Payment Pending</h2>
-        <p className="mt-2 text-[13px] text-[#666]">Your payment has been initiated and is currently pending compliance screening. We will email you with an update shortly.</p>
-        <button onClick={onRestart} className="mt-8 w-full rounded-lg bg-[#f0f0f0] py-3 text-[14px] font-medium text-[#444]">Close</button>
+        <h2 className="text-[20px] font-bold">Payment Pending</h2>
       </div>
     </section>
   );
 }
 
-// Form Partials
-function PersonalForm({ payer, fieldErrors, editingField, onFieldChange, onEditField }: any) {
+function PersonalForm({ payer, fieldErrors, onFieldChange }: any) {
   return (
     <div className="mt-3 space-y-3">
       <div className="bg-[#f8f8f8] p-3 rounded-lg border border-[#e5e5e5]">
         <label className="text-[11px] text-[#717171] font-semibold">Legal Full Name</label>
-        <input value={payer.fullName} onChange={e => onFieldChange('fullName', e.target.value)} placeholder="Must be exactly as written on bank account"
-          className={`mt-1 w-full rounded bg-white px-3 py-2 text-[12px] border ${fieldErrors.fullName ? 'border-red-400' : 'border-[#d5d5d5]'}`} />
-        <p className="mt-1 text-[10px] text-[#ff4c16] font-medium leading-tight">This name will be screened for compliance. Do not use a nickname.</p>
+        <input value={payer.fullName} onChange={e => onFieldChange('fullName', e.target.value)} placeholder="Must be exactly as written" className="mt-1 w-full rounded bg-white px-3 py-2 text-[12px] border border-[#d5d5d5]" />
       </div>
-      <div className="bg-[#f8f8f8] p-3 rounded-lg border border-[#e5e5e5] grid gap-2">
-        <label className="text-[11px] text-[#717171]">Email Address</label>
-        <input value={payer.email} onChange={e => onFieldChange('email', e.target.value)} placeholder="name@domain.com" className="w-full rounded bg-white px-3 py-2 text-[12px] border border-[#d5d5d5]" />
-        
-        <label className="text-[11px] text-[#717171] mt-1">Mobile number</label>
-        <input value={payer.mobile} onChange={e => onFieldChange('mobile', e.target.value)} placeholder="+44 7911 123456" className="w-full rounded bg-white px-3 py-2 text-[12px] border border-[#d5d5d5]" />
-        
-        <label className="text-[11px] text-[#717171] mt-1">Date of Birth</label>
-        <input value={payer.dob} onChange={e => onFieldChange('dob', e.target.value)} placeholder="DD/MM/YYYY" className="w-full rounded bg-white px-3 py-2 text-[12px] border border-[#d5d5d5]" />
-        
-        <label className="text-[11px] text-[#717171] mt-1">Address & Postcode</label>
-        <input value={payer.address} onChange={e => onFieldChange('address', e.target.value)} placeholder="123 Example Street" className="w-full rounded bg-white px-3 py-2 text-[12px] border border-[#d5d5d5]" />
-        <input value={payer.postcode} onChange={e => onFieldChange('postcode', e.target.value)} placeholder="SW1A 1AA" className="w-full rounded bg-white px-3 py-2 text-[12px] border border-[#d5d5d5]" />
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-[#f8f8f8] p-3 rounded-lg border border-[#e5e5e5]">
+           <label className="text-[11px] text-[#717171] font-semibold">Email Address</label>
+           <input value={payer.email} onChange={e => onFieldChange('email', e.target.value)} placeholder="name@domain.com" className="mt-1 w-full rounded bg-white px-3 py-2 text-[12px] border border-[#d5d5d5]" />
+        </div>
+        <div className="bg-[#f8f8f8] p-3 rounded-lg border border-[#e5e5e5]">
+           <label className="text-[11px] text-[#717171] font-semibold">Date of Birth</label>
+           <input value={payer.dob} onChange={e => onFieldChange('dob', e.target.value)} placeholder="DD/MM/YYYY" className="mt-1 w-full rounded bg-white px-3 py-2 text-[12px] border border-[#d5d5d5]" />
+        </div>
+      </div>
+      <div className="bg-[#f8f8f8] p-3 rounded-lg border border-[#e5e5e5]">
+        <label className="text-[11px] text-[#717171] font-semibold">Mobile Number</label>
+        <input value={payer.mobile} onChange={e => onFieldChange('mobile', e.target.value)} placeholder="+44 7911 123456" className="mt-1 w-full rounded bg-white px-3 py-2 text-[12px] border border-[#d5d5d5]" />
+      </div>
+      <div className="bg-[#f8f8f8] p-3 rounded-lg border border-[#e5e5e5]">
+        <label className="text-[11px] text-[#717171] font-semibold">Home Address</label>
+        <input value={payer.address} onChange={e => onFieldChange('address', e.target.value)} placeholder="123 Example Street" className="mt-1 w-full rounded bg-white px-3 py-2 text-[12px] border border-[#d5d5d5]" />
+        <input value={payer.postcode} onChange={e => onFieldChange('postcode', e.target.value)} placeholder="SW1A 1AA" className="mt-2 w-full rounded bg-white px-3 py-2 text-[12px] border border-[#d5d5d5]" />
       </div>
     </div>
   );
 }
 
-function CompanyForm({ payer, fieldErrors, companyLoading, companyLoaded, directorLoading, directorLoaded, onCompanyRegChange, onDirectorSelect, onFieldChange }: any) {
+function CompanyForm({ payer, companyLoading, companyLoaded, directorLoading, directorLoaded, onCompanyRegChange, onDirectorSelect, onFieldChange }: any) {
   return (
     <div className="mt-3 space-y-3">
       <div className="bg-[#f8f8f8] p-3 rounded-lg border border-[#e5e5e5]">
         <label className="text-[11px] text-[#717171] font-semibold">Your Full Name (Authorised Representative)</label>
-        <input value={payer.fullName} onChange={e => onFieldChange('fullName', e.target.value)} placeholder="Enter your full legal name"
-          className="mt-1 w-full rounded bg-white px-3 py-2 text-[12px] border border-[#d5d5d5]" />
-        
-        <label className="text-[11px] text-[#717171] mt-2 block">Payer Email</label>
-        <input value={payer.email} onChange={e => onFieldChange('email', e.target.value)} placeholder="name@company.com" className="w-full rounded bg-white px-3 py-2 text-[12px] border border-[#d5d5d5]" />
+        <input value={payer.fullName} onChange={e => onFieldChange('fullName', e.target.value)} placeholder="Enter your full legal name" className="mt-1 w-full rounded bg-white px-3 py-2 text-[12px] border border-[#d5d5d5]" />
       </div>
-
+      <div className="bg-[#f8f8f8] p-3 rounded-lg border border-[#e5e5e5]">
+        <label className="text-[11px] text-[#717171] font-semibold">Company Email</label>
+        <input value={payer.email} onChange={e => onFieldChange('email', e.target.value)} placeholder="name@company.com" className="mt-1 w-full rounded bg-white px-3 py-2 text-[12px] border border-[#d5d5d5]" />
+      </div>
       <div className="bg-[#f8f8f8] p-3 rounded-lg border border-[#e5e5e5]">
         <label className="text-[11px] text-[#717171] font-semibold">Company Registration Number</label>
-        <input value={payer.companyRegNo} onChange={e => onCompanyRegChange(e.target.value)} placeholder="E.g. RC 123654"
-          className="mt-1 w-full rounded bg-white px-3 py-2 text-[12px] border border-[#d5d5d5]" />
+        <input value={payer.companyRegNo} onChange={e => onCompanyRegChange(e.target.value)} placeholder="E.g. RC 123654" className="mt-1 w-full rounded bg-white px-3 py-2 text-[12px] border border-[#d5d5d5]" />
         
-        {companyLoading && <span className="text-[10px] text-[#555] mt-1 flex items-center gap-1"><Loader2 className="animate-spin w-3 h-3" /> Looking up...</span>}
-        
-        {companyLoaded && (
-          <div className="mt-2 text-[12px] text-[#333] border-l-2 border-[#2a5f9e] pl-2 py-1 bg-white">
-            <p className="font-bold">{payer.companyName}</p><p className="text-[11px] text-[#666]">{payer.companyAddress}</p>
+        {companyLoading && (
+          <div className="mt-2 flex items-center gap-2 text-[11px] text-[#2a5f9e]">
+            <Loader2 size={12} className="animate-spin" /> Fetching company details...
           </div>
         )}
         
         {companyLoaded && (
           <div className="mt-3">
-            <label className="text-[11px] text-[#717171] font-semibold">Authorised Director</label>
-            <select value={payer.directorName} onChange={e => onDirectorSelect(e.target.value)} className="w-full mt-1 rounded border bg-white px-3 py-2 text-[12px]">
+            <div className="mb-3 rounded border border-green-200 bg-green-50 p-2">
+              <p className="text-[12px] font-bold text-green-800">{payer.companyName}</p>
+              <p className="text-[11px] text-green-700">{payer.companyAddress}</p>
+            </div>
+            <select aria-label="Director Name" value={payer.directorName} onChange={e => onDirectorSelect(e.target.value)} className="w-full mt-1 rounded border bg-white px-3 py-2 text-[12px]">
               <option value="">Select director...</option>
-              {MOCK_COMPANY_DATA.directors.map(d => <option key={d} value={d}>{d}</option>)}
+              {MOCK_COMPANY_DATA.directors.map(d=><option key={d} value={d}>{d}</option>)}
             </select>
-            {directorLoading && <span className="text-[10px] text-[#555] mt-1 flex items-center gap-1"><Loader2 className="animate-spin w-3 h-3" /> Verifying...</span>}
-            {directorLoaded && <span className="text-[11px] text-green-600 font-semibold mt-1 flex items-center gap-1"><Check size={12} /> Director Verified</span>}
+            
+            {directorLoading && (
+              <div className="mt-2 flex items-center gap-2 text-[11px] text-[#2a5f9e]">
+                <Loader2 size={12} className="animate-spin" /> Verifying director...
+              </div>
+            )}
+            {directorLoaded && <span className="text-[11px] text-green-600 font-semibold mt-2 flex items-center gap-1"><Check size={12}/> Director Verified</span>}
           </div>
         )}
       </div>
@@ -945,20 +853,12 @@ function CompanyForm({ payer, fieldErrors, companyLoading, companyLoaded, direct
   );
 }
 
-// Shared
 function RadioOption({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
-  return (
-    <button onClick={onClick} className={`flex items-center gap-2 text-[13px] transition-colors ${active ? 'text-[#ff4c16]' : 'text-[#9f9f9f]'}`}>
-      <span className={`flex h-4 w-4 items-center justify-center rounded-full border-2 transition-colors ${active ? 'border-[#ff4c16]' : 'border-[#d8d8d8]'}`}>
-        {active && <span className="h-2 w-2 rounded-full bg-[#ff4c16]" />}
-      </span>
-      <span className="font-semibold">{label}</span>
-    </button>
-  );
+  return (<button onClick={onClick} className={`flex items-center gap-2 text-[13px] ${active ? 'text-[#ff4c16]' : 'text-[#9f9f9f]'}`}><span className={`flex h-4 w-4 items-center justify-center rounded-full border-2 ${active ? 'border-[#ff4c16]' : 'border-[#d8d8d8]'}`}>{active && <span className="h-2 w-2 rounded-full bg-[#ff4c16]" />}</span><span className="font-semibold">{label}</span></button>);
 }
-function Panel({ children, className = '' }: { children: React.ReactNode; className?: string }) { return <div className={`rounded-xl bg-white shadow-sm p-4 ${className}`}>{children}</div>; }
-function KV({ label, value, bold = false }: { label: string; value: string; bold?: boolean }) { return (<div className="flex justify-between py-1"><span className="text-[#666]">{label}</span><span className={`${bold ? 'font-bold' : 'font-semibold'} text-[#333]`}>{value}</span></div>); }
-function DataRow({ label, value }: { label: string; value: string }) { return (<div className="flex justify-between text-[12px] py-1 border-b border-[#eee] last:border-0"><span className="text-[#777]">{label}</span><span className="font-medium text-[#333]">{value}</span></div>); }
+function Panel({ children, className = '' }: any) { return <div className={`rounded-xl bg-white shadow-sm p-4 ${className}`}>{children}</div>; }
+function KV({ label, value, bold = false }: any) { return (<div className="flex justify-between py-1"><span className="text-[#666]">{label}</span><span className={`${bold ? 'font-bold' : 'font-semibold'} text-[#333]`}>{value}</span></div>); }
+function DataRow({ label, value }: any) { return (<div className="flex justify-between text-[12px] py-1 border-b border-[#eee] last:border-0"><span className="text-[#777]">{label}</span><span className="font-medium text-[#333]">{value}</span></div>); }
 function AirPeaceBrandText({ size = 'md' }: any) { return (<div><p className={`${size==='sm'?'text-[12px]':'text-[16px]'} font-black italic text-[#2a5f9e]`}>AIR PEACE</p></div>); }
 function Brand() { return <AirPeaceBrandText size="lg" />; }
 function HeaderLogo() { return <div className="p-3"><AirPeaceBrandText size="sm" /></div>; }

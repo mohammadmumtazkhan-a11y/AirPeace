@@ -5,11 +5,20 @@ test.describe('AirPeace Payment Flow - Vibe Coding Brief', () => {
     await page.goto('http://localhost:3000');
   });
 
+  async function handleMandatoryModal(page: any) {
+    await expect(page.getByText('Important Information')).toBeVisible();
+    await page.getByRole('checkbox').check();
+    await page.getByRole('button', { name: /Acknowledge/i }).click();
+    await expect(page.getByText('Important Information')).not.toBeVisible();
+  }
+
   test('Personal — Success', async ({ page }) => {
     await page.getByText('Personal — Success', { exact: true }).click();
     await page.getByText('Pay by Bank (instant transfer)').click();
     await page.getByRole('button', { name: /Make Payment/i }).click();
     await page.getByRole('button', { name: /Continue to Payment/i }).click();
+    
+    await handleMandatoryModal(page);
     
     // Fill the clean form
     await page.getByPlaceholder('Must be exactly as written').fill('Jane Doe');
@@ -18,9 +27,6 @@ test.describe('AirPeace Payment Flow - Vibe Coding Brief', () => {
     await page.getByPlaceholder('+44 7911 123456').fill('7911987654');
     await page.getByPlaceholder('123 Example Street').fill('10 Main St');
     await page.getByPlaceholder('SW1A 1AA').fill('E1 1AA');
-    
-    // Check confirmation
-    await page.getByRole('checkbox').check();
     
     await page.getByRole('button', { name: /Review & Continue/i }).click();
     
@@ -35,15 +41,14 @@ test.describe('AirPeace Payment Flow - Vibe Coding Brief', () => {
     await page.getByRole('button', { name: /Make Payment/i }).click();
     await page.getByRole('button', { name: /Continue to Payment/i }).click();
     
+    await handleMandatoryModal(page);
+    
     await page.getByPlaceholder('Must be exactly as written').fill('Mismatched Name');
     await page.getByPlaceholder('name@domain.com').fill('bad@example.com');
     await page.getByPlaceholder('DD/MM/YYYY').fill('01/01/1990');
     await page.getByPlaceholder('+44 7911 123456').fill('7911');
     await page.getByPlaceholder('123 Example Street').fill('10 Main St');
     await page.getByPlaceholder('SW1A 1AA').fill('E1 1AA');
-    
-    // Check confirmation
-    await page.getByRole('checkbox').check();
     
     await page.getByRole('button', { name: /Review & Continue/i }).click();
     
@@ -62,15 +67,14 @@ test.describe('AirPeace Payment Flow - Vibe Coding Brief', () => {
     await page.getByRole('button', { name: /Make Payment/i }).click();
     await page.getByRole('button', { name: /Continue to Payment/i }).click();
     
+    await handleMandatoryModal(page);
+    
     await page.getByPlaceholder('Enter your full legal name').fill('John Manager');
     await page.getByPlaceholder('name@company.com').fill('john@company.com');
     await page.getByPlaceholder('E.g. RC 123654').fill('1234');
     await expect(page.getByText('Acme Limited')).toBeVisible();
     await page.locator('select').selectOption({ label: 'Jane Smith' });
     await expect(page.getByText('Director Verified')).toBeVisible();
-    
-    // Check confirmation
-    await page.getByRole('checkbox').check();
     
     await page.getByRole('button', { name: /Review & Continue/i }).click();
     await expect(page.getByText('Validation in progress')).toBeVisible({ timeout: 15000 });
@@ -83,15 +87,14 @@ test.describe('AirPeace Payment Flow - Vibe Coding Brief', () => {
     await page.getByRole('button', { name: /Make Payment/i }).click();
     await page.getByRole('button', { name: /Continue to Payment/i }).click();
     
+    await handleMandatoryModal(page);
+    
     await page.getByPlaceholder('Enter your full legal name').fill('Some Name');
     await page.getByPlaceholder('name@company.com').fill('a@b.com');
     await page.getByPlaceholder('E.g. RC 123654').fill('1234');
     await expect(page.getByText('Acme Limited')).toBeVisible();
     await page.locator('select').selectOption({ label: 'John Doe' });
     await expect(page.getByText('Director Verified')).toBeVisible();
-    
-    // Check confirmation
-    await page.getByRole('checkbox').check();
     
     await page.getByRole('button', { name: /Review & Continue/i }).click();
     await expect(page.getByText('Validation in progress')).toBeVisible({ timeout: 15000 });
@@ -108,9 +111,10 @@ test.describe('AirPeace Payment Flow - Vibe Coding Brief', () => {
     await expect(page.getByText('Welcome back!')).toBeVisible();
     await page.getByRole('button', { name: /Continue with these details/i }).click();
     
+    await handleMandatoryModal(page);
+    
     // Review screen
     await expect(page.getByText('Confirm your payer details')).toBeVisible();
-    await page.getByRole('checkbox').check();
     await page.getByRole('button', { name: /Confirm & Pay/i }).click();
     
     await expect(page.getByText('Validation in progress')).toBeVisible({ timeout: 15000 });
@@ -126,8 +130,9 @@ test.describe('AirPeace Payment Flow - Vibe Coding Brief', () => {
     await expect(page.getByText('Welcome back!')).toBeVisible();
     await page.getByRole('button', { name: /Continue with these details/i }).click();
     
+    await handleMandatoryModal(page);
+    
     await expect(page.getByText('Confirm your payer details')).toBeVisible();
-    await page.getByRole('checkbox').check();
     await page.getByRole('button', { name: /Confirm & Pay/i }).click();
     
     await expect(page.getByText('Validation in progress')).toBeVisible({ timeout: 15000 });
