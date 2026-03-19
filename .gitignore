@@ -8,6 +8,9 @@ dist
 .DS_Store
 *.log
 
+# Credentials (never commit)
+.credentials
+
 # Playwright
 /test-results/
 /playwright-report/
