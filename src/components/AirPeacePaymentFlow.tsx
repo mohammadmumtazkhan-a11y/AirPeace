@@ -804,18 +804,6 @@ function DetailsScreen({
               <h3 className="text-[14px] font-bold text-[#3a3a3a] mb-3">Payer Information</h3>
               
               <div className="space-y-4">
-                {/* Payer Name */}
-                <div className="bg-[#f4f4f4] p-3 rounded-lg border border-[#e5e5e5]">
-                  <label className="text-[11px] text-[#717171] font-bold">Full Legal Name</label>
-                  <input
-                    value={payer.firstName}
-                    onChange={e => onFieldChange?.('firstName', e.target.value)}
-                    placeholder="Enter your full legal name"
-                    className={`mt-1 w-full rounded border border-[#d5d5d5] bg-white px-3 py-2.5 text-[12px] text-[#333] ${fieldErrors?.firstName ? 'border-red-400' : ''}`}
-                  />
-                  {fieldErrors?.firstName && <p className="mt-1 text-[11px] text-red-500">{fieldErrors.firstName}</p>}
-                </div>
-
                 {/* Company Email */}
                 <div className="bg-[#f4f4f4] p-3 rounded-lg border border-[#e5e5e5]">
                   <label className="text-[11px] text-[#717171] font-bold">Company Email</label>
