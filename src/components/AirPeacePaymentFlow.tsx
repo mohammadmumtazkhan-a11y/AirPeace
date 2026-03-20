@@ -347,7 +347,6 @@ export default function AirPeacePaymentFlow() {
   // ---- Company form submit → review ----
   const handleCompanyFormSubmit = useCallback(() => {
     const errors: FieldErrors = {};
-    if (!payer.firstName.trim()) errors.firstName = 'Full name is required';
     if (!payer.companyRegNo.trim() || !companyLoaded) errors.companyRegNo = 'Valid company registration required';
     if (!payer.directorName.trim() || !directorLoaded) errors.directorName = 'Verified director required';
     if (Object.keys(errors).length > 0) { setFieldErrors(errors); addToast('Please fill in all required fields.'); return; }
