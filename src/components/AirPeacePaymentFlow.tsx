@@ -31,9 +31,7 @@ type Stage =
   | 'method'
   | 'summary'        // Screen 1: Entry / Payment Start
   | 'details'        // Screen 2: Account type selector (Personal / Company)
-  | 'recognition'    // Personal: Welcome back! screen
   | 'personal-form'  // Personal: Manual entry form (Use different details)
-  | 'company-form'   // Company: Company details form
   | 'review'         // Screen 3: Review payer details
   | 'processing'     // Screen 4: Redirecting to bank
   | 'awaiting'       // Screen 5: Waiting for funds
@@ -189,7 +187,7 @@ export default function AirPeacePaymentFlow() {
   const [accountType, setAccountType]       = useState<AccountType | null>(null);
   const [expectedOutcome, setExpectedOutcome] = useState<ExpectedOutcome>('SUCCESS');
   // Track which stage to go back to from Review
-  const [prevPaymentStage, setPrevPaymentStage] = useState<Stage>('recognition');
+  const [prevPaymentStage, setPrevPaymentStage] = useState<Stage>('details');
 
   const [payer, setPayer]                   = useState<PayerDetails>({ ...PARTNER_PAYER });
   const [bankAccountName, setBankAccountName] = useState('');
@@ -252,7 +250,7 @@ export default function AirPeacePaymentFlow() {
     setIsVerifying(false);
     setHasAcknowledgedWarning(false);
     setIsShowingWarningModal(false);
-    setPrevPaymentStage('recognition');
+    setPrevPaymentStage('details');
     setPayer({ ...PARTNER_PAYER }); // pre-populate with partner data
     setStage('method');
   }, []);
@@ -277,8 +275,6 @@ export default function AirPeacePaymentFlow() {
   const handleSelectPersonal = useCallback(() => {
     setAccountType('PERSONAL');
     setFieldErrors({});
-    setRecognitionChecking(true);
-    setStage('recognition');
   }, []);
 
   // ---- Company selected → company form ----
@@ -289,8 +285,7 @@ export default function AirPeacePaymentFlow() {
     setDirectorLoaded(false); setDirectorLoading(false);
     // Keep email from partner, clear everything else
     setPayer(prev => ({ ...prev, firstName: '', middleName: '', lastName: '', companyRegNo: '', companyName: '', companyAddress: '', directorName: '' }));
-    setStage('company-form');
-  }, []);
+  }, [setAccountType, setFieldErrors, setCompanyLoaded, setCompanyLoading, setDirectorLoaded, setDirectorLoading, setPayer]);
 
   // ---- Recognition check simulation ----
   useEffect(() => {
@@ -345,28 +340,25 @@ export default function AirPeacePaymentFlow() {
   // ---- Company form submit → review ----
   const handleCompanyFormSubmit = useCallback(() => {
     const errors: FieldErrors = {};
+    if (!payer.firstName.trim()) errors.firstName = 'Full name is required';
     if (!payer.companyRegNo.trim() || !companyLoaded) errors.companyRegNo = 'Valid company registration required';
     if (!payer.directorName.trim() || !directorLoaded) errors.directorName = 'Verified director required';
     if (Object.keys(errors).length > 0) { setFieldErrors(errors); addToast('Please fill in all required fields.'); return; }
-    setPrevPaymentStage('company-form');
+    setPrevPaymentStage('details');
     setStage('review');
   }, [payer, companyLoaded, directorLoaded, addToast]);
 
-  // ---- Recognition "Continue with these details" → review ----
-  const handleRecognitionContinue = useCallback(() => {
-    setPrevPaymentStage('recognition');
-    setStage('review');
-  }, []);
+
 
   // ---- Review "Confirm and continue" → processing ----
   // Warning modal only applies to Personal (name mismatch check)
   const handleConfirmAndPay = useCallback((force = false) => {
-    if (accountType === 'PERSONAL' && !hasAcknowledgedWarning && !force) {
+    if (!hasAcknowledgedWarning && !force) {
       setIsShowingWarningModal(true);
       return;
     }
     setStage('processing');
-  }, [accountType, hasAcknowledgedWarning]);
+  }, [hasAcknowledgedWarning]);
 
   // ---- Post-payment stage transitions ----
   useEffect(() => { if (stage !== 'processing') return; const id = setTimeout(() => setStage('awaiting'), 3000);  return () => clearTimeout(id); }, [stage]);
@@ -474,29 +466,40 @@ export default function AirPeacePaymentFlow() {
             </motion.div>
           )}
 
-          {/* Screen 2: Account type selector */}
+          {/* Screen 2: Account type selector / Personal details */}
           {stage === 'details' && (
             <motion.div key="details" {...pageVariants}>
-              <DetailsScreen onSelectPersonal={handleSelectPersonal} onSelectCompany={handleSelectCompany} onBack={() => setStage('summary')} />
-            </motion.div>
-          )}
-
-          {/* Personal: Welcome back! */}
-          {stage === 'recognition' && (
-            <motion.div key="recognition" {...pageVariants}>
-              <RecognitionScreen
+              <DetailsScreen
+                accountType={accountType}
                 payer={payer}
-                isChecking={recognitionChecking}
-                onContinue={() => handleConfirmAndPay()}
+                onSelectPersonal={handleSelectPersonal}
+                onSelectCompany={handleSelectCompany}
+                onConfirmPersonal={() => {
+                  // Ensure partner name is always set before payment (guards against edge case where names were cleared)
+                  if (!payer.firstName.trim() && !payer.lastName.trim()) {
+                    setPayer(prev => ({ ...prev, firstName: PARTNER_DATA.firstName, middleName: PARTNER_DATA.middleName, lastName: PARTNER_DATA.lastName }));
+                  }
+                  handleConfirmAndPay();
+                }}
+                onConfirmCompany={handleCompanyFormSubmit}
+                companyLoading={companyLoading}
+                companyLoaded={companyLoaded}
+                directorLoading={directorLoading}
+                directorLoaded={directorLoaded}
+                onFieldChange={handleFieldChange}
+                onCompanyRegChange={handleCompanyRegChange}
+                onDirectorSelect={handleDirectorSelect}
                 onUseDifferent={() => {
                   setPayer(prev => ({ ...prev, firstName: '', middleName: '', lastName: '' }));
                   setFieldErrors({});
                   setStage('personal-form');
                 }}
-                onBack={() => setStage('details')}
+                onBack={() => setStage('summary')}
               />
             </motion.div>
           )}
+
+
 
           {/* Personal: Manual form */}
           {stage === 'personal-form' && (
@@ -506,29 +509,17 @@ export default function AirPeacePaymentFlow() {
                 fieldErrors={fieldErrors}
                 onFieldChange={handleFieldChange}
                 onContinue={handlePersonalFormSubmit}
-                onBack={() => setStage('recognition')}
+                onBack={() => {
+                  // Restore partner data names when returning to the pre-filled details screen
+                  setPayer(prev => ({ ...prev, firstName: PARTNER_DATA.firstName, middleName: PARTNER_DATA.middleName, lastName: PARTNER_DATA.lastName }));
+                  setAccountType(null);
+                  setStage('details');
+                }}
               />
             </motion.div>
           )}
 
-          {/* Company: Company form */}
-          {stage === 'company-form' && (
-            <motion.div key="company-form" {...pageVariants} className="flex-1">
-              <CompanyFormScreen
-                payer={payer}
-                fieldErrors={fieldErrors}
-                companyLoading={companyLoading}
-                companyLoaded={companyLoaded}
-                directorLoading={directorLoading}
-                directorLoaded={directorLoaded}
-                onFieldChange={handleFieldChange}
-                onCompanyRegChange={handleCompanyRegChange}
-                onDirectorSelect={handleDirectorSelect}
-                onContinue={handleCompanyFormSubmit}
-                onBack={() => setStage('details')}
-              />
-            </motion.div>
-          )}
+
 
           {/* Screen 3: Review */}
           {stage === 'review' && (
@@ -735,7 +726,29 @@ function SummaryScreen({ timer, onContinue }: { timer: string; onContinue: () =>
 // ==========================================
 // SCREEN 2: ACCOUNT TYPE SELECTOR
 // ==========================================
-function DetailsScreen({ onSelectPersonal, onSelectCompany, onBack }: { onSelectPersonal: () => void; onSelectCompany: () => void; onBack: () => void }) {
+function DetailsScreen({
+  accountType, payer, onSelectPersonal, onSelectCompany, onConfirmPersonal, onConfirmCompany,
+  onUseDifferent, onBack, companyLoading, companyLoaded, directorLoading, directorLoaded,
+  onFieldChange, onCompanyRegChange, onDirectorSelect, fieldErrors = {}
+}: {
+  accountType: AccountType | null;
+  payer: PayerDetails;
+  onSelectPersonal: () => void;
+  onSelectCompany: () => void;
+  onConfirmPersonal: () => void;
+  onConfirmCompany: () => void;
+  onUseDifferent: () => void;
+  onBack: () => void;
+  companyLoading?: boolean;
+  companyLoaded?: boolean;
+  directorLoading?: boolean;
+  directorLoaded?: boolean;
+  onFieldChange?: (f: keyof PayerDetails, v: string) => void;
+  onCompanyRegChange?: (v: string) => void;
+  onDirectorSelect?: (v: string) => void;
+  fieldErrors?: FieldErrors;
+}) {
+  const canContinueCompany = companyLoaded && directorLoaded;
   return (
     <section className="flex flex-col px-3 pb-4">
       <button onClick={onBack} className="mb-2 flex items-center gap-1 text-[12px] text-[#777]"><ArrowLeft size={14} /> Back</button>
@@ -746,64 +759,132 @@ function DetailsScreen({ onSelectPersonal, onSelectCompany, onBack }: { onSelect
         </div>
         <p className="text-[12px] font-semibold text-[#3a3a3a] mb-3">Select payer account type</p>
         <div className="flex items-center gap-5">
-          <RadioOption active={false} onClick={onSelectPersonal} label="Personal" />
-          <RadioOption active={false} onClick={onSelectCompany} label="Company" />
+          <RadioOption active={accountType === 'PERSONAL'} onClick={onSelectPersonal} label="Personal" />
+          <RadioOption active={accountType === 'COMPANY'} onClick={onSelectCompany} label="Company" />
         </div>
       </Panel>
+
+      <AnimatePresence mode="wait">
+        {accountType === 'PERSONAL' && (
+          <motion.div key="personal" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="mt-4 space-y-4 overflow-hidden">
+            {/* Payer details + warning card */}
+            <div className="overflow-hidden rounded-xl bg-white px-4 py-4 shadow-sm border border-[#e0e0e0]">
+              <h3 className="text-[14px] font-bold text-[#3a3a3a] mb-3">Payer Information</h3>
+              <div className="bg-[#f8f8f8] px-3 py-2.5 rounded-lg">
+                <DataRow label="Payer Name" value={getPayerFullName(payer)} />
+                <DataRow label="Email"      value={payer.email} />
+              </div>
+              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800 flex items-start gap-2">
+                <AlertCircle size={14} className="mt-0.5 flex-shrink-0 text-amber-500" />
+                <span>The bank account used for payment must be in the payer's name. Mismatches will cause verification to fail and funds to be returned.</span>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <motion.button onClick={onConfirmPersonal} whileTap={{ scale: 0.98 }} className="w-full rounded-lg bg-[#ff4c16] py-3.5 text-[18px] font-bold text-white shadow-md">
+                Confirm and continue
+              </motion.button>
+              <button onClick={onUseDifferent} className="w-full rounded-lg bg-white border border-[#ddd] py-3.5 text-[16px] font-semibold text-[#555] shadow-sm">
+                Use different details
+              </button>
+            </div>
+          </motion.div>
+        )}
+
+        {accountType === 'COMPANY' && (
+          <motion.div key="company" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="mt-4 space-y-4 overflow-hidden">
+            <div className="overflow-hidden rounded-xl bg-white px-4 py-4 shadow-sm border border-[#e0e0e0]">
+              <h3 className="text-[14px] font-bold text-[#3a3a3a] mb-3">Payer Information</h3>
+              
+              <div className="space-y-4">
+                {/* Payer Name */}
+                <div className="bg-[#f4f4f4] p-3 rounded-lg border border-[#e5e5e5]">
+                  <label className="text-[11px] text-[#717171] font-bold">Full Legal Name</label>
+                  <input
+                    value={payer.firstName}
+                    onChange={e => onFieldChange?.('firstName', e.target.value)}
+                    placeholder="Enter your full legal name"
+                    className={`mt-1 w-full rounded border border-[#d5d5d5] bg-white px-3 py-2.5 text-[12px] text-[#333] ${fieldErrors?.firstName ? 'border-red-400' : ''}`}
+                  />
+                  {fieldErrors?.firstName && <p className="mt-1 text-[11px] text-red-500">{fieldErrors.firstName}</p>}
+                </div>
+
+                {/* Company Email */}
+                <div className="bg-[#f4f4f4] p-3 rounded-lg border border-[#e5e5e5]">
+                  <label className="text-[11px] text-[#717171] font-bold">Company Email</label>
+                  <input
+                    value={payer.email}
+                    onChange={e => onFieldChange?.('email', e.target.value)}
+                    placeholder="name@company.com"
+                    className="mt-1 w-full rounded border border-[#d5d5d5] bg-white px-3 py-2.5 text-[12px] text-[#333]"
+                  />
+                </div>
+
+                {/* Company Registration Number */}
+                <div className="bg-[#f4f4f4] p-3 rounded-lg border border-[#e5e5e5]">
+                  <label className="text-[11px] text-[#717171] font-bold">Company Registration Number</label>
+                  <input
+                    value={payer.companyRegNo}
+                    onChange={e => onCompanyRegChange?.(e.target.value)}
+                    placeholder="E.g. RC 123654"
+                    className={`mt-1 w-full rounded border px-3 py-2.5 text-[12px] bg-white ${fieldErrors?.companyRegNo ? 'border-red-400' : 'border-[#d5d5d5]'}`}
+                  />
+                  {fieldErrors?.companyRegNo && <p className="mt-1 text-[11px] text-red-500">{fieldErrors.companyRegNo}</p>}
+
+                  {companyLoading && (
+                    <div className="mt-2 flex items-center gap-2 text-[11px] text-[#2a5f9e]">
+                      <Loader2 size={12} className="animate-spin" /> Fetching company details...
+                    </div>
+                  )}
+
+                  {companyLoaded && (
+                    <div className="mt-3">
+                      <div className="mb-3 rounded border border-green-200 bg-green-50 p-2">
+                        <p className="text-[12px] font-bold text-green-800">{payer.companyName}</p>
+                        <p className="text-[11px] text-green-700">{payer.companyAddress}</p>
+                      </div>
+                      <label className="text-[11px] text-[#717171] font-bold">Select Director</label>
+                      <select
+                        aria-label="Director Name"
+                        value={payer.directorName}
+                        onChange={e => onDirectorSelect?.(e.target.value)}
+                        className="mt-1 w-full rounded border border-[#d5d5d5] bg-white px-3 py-2.5 text-[12px]"
+                      >
+                        <option value="">Select director...</option>
+                        {MOCK_COMPANY_DATA.directors.map(d => <option key={d} value={d}>{d}</option>)}
+                      </select>
+                      {directorLoading && (
+                        <div className="mt-2 flex items-center gap-2 text-[11px] text-[#2a5f9e]">
+                          <Loader2 size={12} className="animate-spin" /> Verifying director...
+                        </div>
+                      )}
+                      {directorLoaded && (
+                        <span className="text-[11px] text-green-600 font-bold mt-2 flex items-center gap-1">
+                          <Check size={12} /> Director Verified
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <motion.button
+              disabled={!canContinueCompany}
+              onClick={onConfirmCompany}
+              whileTap={canContinueCompany ? { scale: 0.98 } : {}}
+              className={`w-full rounded-lg py-3.5 text-[18px] font-bold text-white shadow-md transition-all ${canContinueCompany ? 'bg-[#ff4c16]' : 'bg-[#f4a18e] cursor-not-allowed'}`}
+            >
+              Review details
+            </motion.button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </section>
   );
 }
 
-// ==========================================
-// PERSONAL: RECOGNITION / WELCOME BACK
-// ==========================================
-function RecognitionScreen({ payer, isChecking, onContinue, onUseDifferent, onBack }: {
-  payer: PayerDetails; isChecking: boolean; onContinue: () => void; onUseDifferent: () => void; onBack: () => void;
-}) {
-  if (isChecking) {
-    return (
-      <section className="px-3 pb-4">
-        <div className="overflow-hidden rounded-xl bg-white px-4 py-10 shadow-sm flex flex-col items-center">
-          <Loader2 className="h-10 w-10 animate-spin text-[#2a5f9e]" />
-          <p className="mt-3 text-[14px] font-semibold text-[#444]">Checking your details...</p>
-        </div>
-      </section>
-    );
-  }
-  return (
-    <section className="flex flex-col px-3 pb-4">
-      <button onClick={onBack} className="mb-2 flex items-center gap-1 text-[12px] text-[#777]"><ArrowLeft size={14} /> Back</button>
 
-      {/* Welcome back header card */}
-      <div className="overflow-hidden rounded-xl bg-white px-4 py-6 shadow-sm text-center">
-        <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-green-100">
-          <UserCheck className="h-8 w-8 text-green-600" />
-        </div>
-        <h2 className="text-[20px] font-bold">Welcome back!</h2>
-        <p className="mt-1 text-[12px] text-[#777]">We found your previously verified payer details.</p>
-      </div>
-
-      {/* Payer details + warning card */}
-      <div className="mt-2.5 overflow-hidden rounded-xl bg-white px-4 py-4 shadow-sm">
-        <div className="bg-[#f8f8f8] px-3 py-2.5 rounded-lg">
-          <DataRow label="Payer Name" value={getPayerFullName(payer)} />
-          <DataRow label="Email"      value={payer.email} />
-        </div>
-        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800 flex items-start gap-2">
-          <AlertCircle size={14} className="mt-0.5 flex-shrink-0 text-amber-500" />
-          <span>The bank account used for payment must be in the payer's name. Mismatches will cause verification to fail and funds to be returned.</span>
-        </div>
-      </div>
-
-      <motion.button onClick={onContinue} whileTap={{ scale: 0.98 }} className="mt-4 w-full rounded-lg bg-[#ff4c16] py-3 text-[16px] font-bold text-white shadow-md">
-        Confirm and continue
-      </motion.button>
-      <button onClick={onUseDifferent} className="mt-2 w-full rounded-lg border border-[#ccc] bg-white py-2.5 text-[13px] font-medium text-[#666]">
-        Use different details
-      </button>
-    </section>
-  );
-}
 
 // ==========================================
 // PERSONAL: MANUAL FORM (Use different details)
@@ -823,7 +904,7 @@ function PersonalFormScreen({ payer, fieldErrors, onFieldChange, onContinue, onB
           <label className="text-[11px] text-[#717171] font-semibold">Legal Name</label>
           <input
             value={payer.firstName} onChange={e => onFieldChange('firstName', e.target.value)}
-            placeholder="First name"
+            placeholder="Must be exactly as on your bank account"
             className={`mt-2 w-full rounded bg-white px-3 py-2 text-[12px] border ${fieldErrors.firstName ? 'border-red-400' : 'border-[#d5d5d5]'}`}
           />
           {fieldErrors.firstName && <p className="mt-1 text-[11px] text-red-500">{fieldErrors.firstName}</p>}
@@ -878,70 +959,7 @@ function PersonalFormScreen({ payer, fieldErrors, onFieldChange, onContinue, onB
   );
 }
 
-// ==========================================
-// COMPANY: COMPANY FORM
-// ==========================================
-function CompanyFormScreen({ payer, fieldErrors, companyLoading, companyLoaded, directorLoading, directorLoaded, onFieldChange, onCompanyRegChange, onDirectorSelect, onContinue, onBack }: any) {
-  const canContinue = companyLoaded && directorLoaded;
-  return (
-    <section className="flex flex-col px-3 pb-4">
-      <button onClick={onBack} className="mb-2 flex items-center gap-1 text-[12px] text-[#777]"><ArrowLeft size={14} /> Back</button>
-      <Panel>
-        <h3 className="text-[14px] font-semibold text-[#3a3a3a] mb-3">Payer Information</h3>
 
-        {/* Company Email — pre-filled and disabled */}
-        <div className="bg-[#f8f8f8] p-3 rounded-lg border border-[#e5e5e5] mb-3">
-          <label className="text-[11px] text-[#717171] font-semibold">Company Email</label>
-          <input value={payer.email} disabled className="mt-1 w-full rounded bg-[#efefef] px-3 py-2 text-[12px] border border-[#d5d5d5] text-[#888] cursor-not-allowed" />
-        </div>
-
-        {/* Company Registration Number */}
-        <div className="bg-[#f8f8f8] p-3 rounded-lg border border-[#e5e5e5]">
-          <label className="text-[11px] text-[#717171] font-semibold">Company Registration Number</label>
-          <input value={payer.companyRegNo} onChange={e => onCompanyRegChange(e.target.value)} placeholder="E.g. RC 123654"
-            className={`mt-1 w-full rounded bg-white px-3 py-2 text-[12px] border ${fieldErrors.companyRegNo ? 'border-red-400' : 'border-[#d5d5d5]'}`} />
-          {fieldErrors.companyRegNo && <p className="mt-1 text-[11px] text-red-500">{fieldErrors.companyRegNo}</p>}
-
-          {companyLoading && (
-            <div className="mt-2 flex items-center gap-2 text-[11px] text-[#2a5f9e]">
-              <Loader2 size={12} className="animate-spin" /> Fetching company details...
-            </div>
-          )}
-
-          {companyLoaded && (
-            <div className="mt-3">
-              <div className="mb-3 rounded border border-green-200 bg-green-50 p-2">
-                <p className="text-[12px] font-bold text-green-800">{payer.companyName}</p>
-                <p className="text-[11px] text-green-700">{payer.companyAddress}</p>
-              </div>
-              <label className="text-[11px] text-[#717171] font-semibold">Select Director</label>
-              <select aria-label="Director Name" value={payer.directorName} onChange={e => onDirectorSelect(e.target.value)}
-                className="mt-1 w-full rounded border bg-white px-3 py-2 text-[12px]">
-                <option value="">Select director...</option>
-                {MOCK_COMPANY_DATA.directors.map(d => <option key={d} value={d}>{d}</option>)}
-              </select>
-              {directorLoading && (
-                <div className="mt-2 flex items-center gap-2 text-[11px] text-[#2a5f9e]">
-                  <Loader2 size={12} className="animate-spin" /> Verifying director...
-                </div>
-              )}
-              {directorLoaded && (
-                <span className="text-[11px] text-green-600 font-semibold mt-2 flex items-center gap-1">
-                  <Check size={12} /> Director Verified
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-      </Panel>
-
-      <motion.button disabled={!canContinue} onClick={onContinue} whileTap={canContinue ? { scale: 0.98 } : {}}
-        className={`mt-4 w-full rounded-lg py-3 text-[18px] font-bold text-white shadow-sm transition-all ${canContinue ? 'bg-[#ff4c16] hover:bg-[#e64516]' : 'cursor-not-allowed bg-[#efb8a8]'}`}>
-        Review details
-      </motion.button>
-    </section>
-  );
-}
 
 // ==========================================
 // SCREEN 3: REVIEW PAYER DETAILS

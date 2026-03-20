@@ -17,6 +17,8 @@ test.describe('AirPeace Payment Flow - Vibe Coding Brief', () => {
     await page.getByText('Pay by Bank (instant transfer)').click();
     await page.getByRole('button', { name: /Make Payment/i }).click();
     await page.getByRole('button', { name: /Continue/i, exact: true }).click();
+    await page.getByText('Personal', { exact: true }).click();
+    await page.getByRole('button', { name: /Use different details/i }).click();
     
     // Fill the clean form
     await page.getByPlaceholder('Must be exactly as on your bank account').fill('Jane Doe');
@@ -40,6 +42,8 @@ test.describe('AirPeace Payment Flow - Vibe Coding Brief', () => {
     await page.getByText('Pay by Bank (instant transfer)').click();
     await page.getByRole('button', { name: /Make Payment/i }).click();
     await page.getByRole('button', { name: /Continue/i, exact: true }).click();
+    await page.getByText('Personal', { exact: true }).click();
+    await page.getByRole('button', { name: /Use different details/i }).click();
     
     await page.getByPlaceholder('Must be exactly as on your bank account').fill('Jane Doe');
     await page.getByPlaceholder('name@domain.com').fill('jane@example.com');
@@ -67,6 +71,8 @@ test.describe('AirPeace Payment Flow - Vibe Coding Brief', () => {
     await page.getByText('Pay by Bank (instant transfer)').click();
     await page.getByRole('button', { name: /Make Payment/i }).click();
     await page.getByRole('button', { name: /Continue/i, exact: true }).click();
+    await page.getByText('Personal', { exact: true }).click();
+    await page.getByRole('button', { name: /Use different details/i }).click();
     
     await page.getByPlaceholder('Must be exactly as on your bank account').fill('Mismatched Name');
     await page.getByPlaceholder('name@domain.com').fill('bad@example.com');
@@ -93,6 +99,7 @@ test.describe('AirPeace Payment Flow - Vibe Coding Brief', () => {
     await page.getByText('Pay by Bank (instant transfer)').click();
     await page.getByRole('button', { name: /Make Payment/i }).click();
     await page.getByRole('button', { name: /Continue/i, exact: true }).click();
+    await page.getByText('Company', { exact: true }).click();
     
     await page.getByPlaceholder('Enter your full legal name').fill('John Manager');
     await page.getByPlaceholder('name@company.com').fill('john@company.com');
@@ -113,6 +120,7 @@ test.describe('AirPeace Payment Flow - Vibe Coding Brief', () => {
     await page.getByText('Pay by Bank (instant transfer)').click();
     await page.getByRole('button', { name: /Make Payment/i }).click();
     await page.getByRole('button', { name: /Continue/i, exact: true }).click();
+    await page.getByText('Company', { exact: true }).click();
     
     await page.getByPlaceholder('Enter your full legal name').fill('Some Name');
     await page.getByPlaceholder('name@company.com').fill('a@b.com');
@@ -137,6 +145,7 @@ test.describe('AirPeace Payment Flow - Vibe Coding Brief', () => {
     await page.getByText('Pay by Bank (instant transfer)').click();
     await page.getByRole('button', { name: /Make Payment/i }).click();
     await page.getByRole('button', { name: /Continue/i, exact: true }).click();
+    await page.getByText('Company', { exact: true }).click();
     
     await page.getByPlaceholder('Enter your full legal name').fill('Some Name');
     await page.getByPlaceholder('name@company.com').fill('a@b.com');
@@ -162,10 +171,8 @@ test.describe('AirPeace Payment Flow - Vibe Coding Brief', () => {
     await page.getByRole('button', { name: /Make Payment/i }).click();
     await page.getByRole('button', { name: /Continue/i, exact: true }).click();
     
-    // Recognition screen
-    await expect(page.getByText('Welcome back!')).toBeVisible();
-    await page.getByRole('button', { name: /Continue with these details/i }).click();
-    
+    // Select Personal, details appear inline
+    await page.getByText('Personal', { exact: true }).click();
     await page.getByRole('button', { name: /Confirm and continue/i }).click();
     
     await handleMandatoryModal(page);
@@ -180,16 +187,17 @@ test.describe('AirPeace Payment Flow - Vibe Coding Brief', () => {
     await page.getByRole('button', { name: /Make Payment/i }).click();
     await page.getByRole('button', { name: /Continue/i, exact: true }).click();
     
-    await expect(page.getByText('Welcome back!')).toBeVisible();
-    await page.getByRole('button', { name: /Continue with these details/i }).click();
-    
-    await page.getByRole('button', { name: /Confirm and continue/i }).click();
-    
+    await page.getByText('Company', { exact: true }).click();
+    await page.getByPlaceholder('Enter your full legal name').fill('Some Name');
+    await page.getByPlaceholder('name@company.com').fill('a@b.com');
+    await page.getByPlaceholder('E.g. RC 123654').fill('1234');
+    await expect(page.getByText('Acme Limited')).toBeVisible();
+    await page.locator('select').selectOption({ label: 'John Doe' });
+    await expect(page.getByText('Director Verified')).toBeVisible();
+    await page.getByRole('button', { name: /Review details/i }).click();
     await handleMandatoryModal(page);
-    
     await expect(page.getByText('Redirecting you securely')).toBeVisible();
     await expect(page.getByText('Payment Declined')).toBeVisible({ timeout: 25000 });
-    
     // Test clicking Retry
     await page.getByRole('button', { name: /Retry with a different bank account in your name/i }).click();
     await expect(page.getByText('Redirecting you securely')).toBeVisible();
@@ -200,14 +208,15 @@ test.describe('AirPeace Payment Flow - Vibe Coding Brief', () => {
     await page.getByText('Pay by Bank (instant transfer)').click();
     await page.getByRole('button', { name: /Make Payment/i }).click();
     await page.getByRole('button', { name: /Continue/i, exact: true }).click();
-    
-    await expect(page.getByText('Welcome back!')).toBeVisible();
-    await page.getByRole('button', { name: /Continue with these details/i }).click();
-    
-    await page.getByRole('button', { name: /Confirm and continue/i }).click();
-    
+    await page.getByText('Company', { exact: true }).click();
+    await page.getByPlaceholder('Enter your full legal name').fill('John Manager');
+    await page.getByPlaceholder('name@company.com').fill('john@company.com');
+    await page.getByPlaceholder('E.g. RC 123654').fill('1234');
+    await expect(page.getByText('Acme Limited')).toBeVisible();
+    await page.locator('select').selectOption({ label: 'Jane Smith' });
+    await expect(page.getByText('Director Verified')).toBeVisible();
+    await page.getByRole('button', { name: /Review details/i }).click();
     await handleMandatoryModal(page);
-    
     await expect(page.getByText('Redirecting you securely')).toBeVisible();
     await expect(page.getByText('Payment approved', { exact: true })).toBeVisible({ timeout: 25000 });
   });
@@ -217,14 +226,9 @@ test.describe('AirPeace Payment Flow - Vibe Coding Brief', () => {
     await page.getByText('Pay by Bank (instant transfer)').click();
     await page.getByRole('button', { name: /Make Payment/i }).click();
     await page.getByRole('button', { name: /Continue/i, exact: true }).click();
-    
-    await expect(page.getByText('Welcome back!')).toBeVisible();
-    await page.getByRole('button', { name: /Continue with these details/i }).click();
-    
+    await page.getByText('Personal', { exact: true }).click();
     await page.getByRole('button', { name: /Confirm and continue/i }).click();
-    
     await handleMandatoryModal(page);
-    
     await expect(page.getByText('Redirecting you securely')).toBeVisible();
     await expect(page.getByText('We could not approve this payment')).toBeVisible({ timeout: 25000 });
   });
