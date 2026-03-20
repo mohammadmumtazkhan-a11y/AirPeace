@@ -41,6 +41,7 @@ type Stage =
   | 'refunding'      // Transitional: returning funds
   | 'refunded'       // Screen 7C: Funds returned
   | 'failure'        // Insufficient funds / generic failure
+  | 'recognition'    // Recognition check in progress
   | 'pending'
   | 'expired';       // Screen 8: Session expired
 
