@@ -272,10 +272,16 @@ export default function AirPeacePaymentFlow() {
     setStage('details');
   }, []);
 
-  // ---- Personal selected → recognition ----
+  // ---- Personal selected → restore partner name in case Company was selected first ----
   const handleSelectPersonal = useCallback(() => {
     setAccountType('PERSONAL');
     setFieldErrors({});
+    setPayer(prev => ({
+      ...prev,
+      firstName:  prev.firstName  || PARTNER_DATA.firstName,
+      middleName: prev.middleName || PARTNER_DATA.middleName,
+      lastName:   prev.lastName   || PARTNER_DATA.lastName,
+    }));
   }, []);
 
   // ---- Company selected → company form ----
