@@ -86,6 +86,9 @@ const PARTNER_DATA = {
   email: 'johndoe@email.com',
 };
 
+// ---- AirPeace website URL for cancellation ----
+const AIRPEACE_WEBSITE_URL = 'https://www.airpeace.com';
+
 // Payer pre-populated with partner data (name + email always present)
 const PARTNER_PAYER: PayerDetails = {
   firstName: PARTNER_DATA.firstName,
@@ -1283,6 +1286,9 @@ function MismatchScreen({ payerName, bankName, attempts, onCorrectDetails, onRef
               <motion.button onClick={onRestart} whileTap={{ scale: 0.97 }} className="w-full rounded-lg border border-[#d5d5d5] bg-white py-3 text-[13px] font-semibold text-[#555] flex items-center justify-center gap-2">
                 <RefreshCcw size={14} /> Restart the process
               </motion.button>
+              <motion.button onClick={() => window.location.href = AIRPEACE_WEBSITE_URL} whileTap={{ scale: 0.97 }} className="w-full py-3 text-[13px] font-semibold text-red-600 hover:text-red-700">
+                Cancel
+              </motion.button>
             </div>
           </>
         ) : (
@@ -1345,6 +1351,9 @@ function MismatchScreen({ payerName, bankName, attempts, onCorrectDetails, onRef
               </motion.button>
               <motion.button onClick={onRefunding} whileTap={{ scale: 0.97 }} className="w-full rounded-lg border border-[#d5d5d5] bg-white py-3 text-[13px] font-semibold text-[#555] flex items-center justify-center gap-2">
                 <RefreshCcw size={14} /> Retry with a bank account in your name
+              </motion.button>
+              <motion.button onClick={() => window.location.href = AIRPEACE_WEBSITE_URL} whileTap={{ scale: 0.97 }} className="w-full py-3 text-[13px] font-semibold text-red-600 hover:text-red-700">
+                Cancel
               </motion.button>
             </div>
           </>
