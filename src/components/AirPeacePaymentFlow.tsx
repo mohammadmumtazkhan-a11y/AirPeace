@@ -87,7 +87,7 @@ const PARTNER_DATA = {
 };
 
 // ---- AirPeace website URL for cancellation ----
-const AIRPEACE_WEBSITE_URL = 'https://www.airpeace.com';
+const AIRPEACE_WEBSITE_URL = 'https://flyairpeace.com/';
 
 // Payer pre-populated with partner data (name + email always present)
 const PARTNER_PAYER: PayerDetails = {
