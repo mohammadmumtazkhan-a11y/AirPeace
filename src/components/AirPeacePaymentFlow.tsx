@@ -56,7 +56,9 @@ interface PayerDetails {
   email: string;       // Always pre-filled from partner, disabled
   dob: string;
   mobile: string;
-  address: string;
+  addressLine1: string;
+  addressLine2: string;
+  city: string;
   postcode: string;
   country: string;
   companyRegNo: string;
@@ -90,7 +92,7 @@ const PARTNER_PAYER: PayerDetails = {
   middleName: PARTNER_DATA.middleName,
   lastName: PARTNER_DATA.lastName,
   email: PARTNER_DATA.email,
-  dob: '', mobile: '', address: '', postcode: '',
+  dob: '', mobile: '', addressLine1: '', addressLine2: '', city: '', postcode: '',
   country: 'United Kingdom',
   companyRegNo: '', companyName: '', companyAddress: '', directorName: '',
 };
@@ -132,8 +134,8 @@ function getPayerFullName(p: PayerDetails): string {
 // ==========================================
 // STATUS TRACKER
 // ==========================================
-const PAYMENT_STEPS         = ['Payment initiated from your bank', 'We are waiting to receive your funds', 'We have received your funds', 'We are validating that the bank account name matches the payer details provided', 'Payment approved'];
-const PAYMENT_STEPS_MISMATCH = ['Payment initiated from your bank', 'We are waiting to receive your funds', 'We have received your funds', 'We are validating that the bank account name matches the payer details provided', 'Name mismatch — funds are being returned'];
+const PAYMENT_STEPS         = ['Verifying Name', 'Payment initiated from your bank', 'We are waiting to receive your funds', 'We have received your funds', 'We are validating that the bank account name matches the payer details provided', 'Payment approved'];
+const PAYMENT_STEPS_MISMATCH = ['Name mismatch — verification failed', 'Payment initiated from your bank', 'We are waiting to receive your funds', 'We have received your funds', 'We are validating that the bank account name matches the payer details provided', 'Name mismatch — funds are being returned'];
 
 function StatusTracker({ activeStep, isMismatch = false, isComplete = false }: { activeStep: number; isMismatch?: boolean; isComplete?: boolean }) {
   const steps = (isMismatch ? PAYMENT_STEPS_MISMATCH : PAYMENT_STEPS).map((label, idx) => {
@@ -146,23 +148,23 @@ function StatusTracker({ activeStep, isMismatch = false, isComplete = false }: {
   return (
     <div className="w-full space-y-1">
       {steps.map((step, idx) => {
-        const mismatchLast = isMismatch && idx === 4;
+        const isThisStepFailed = isMismatch && step.status === 'active';
         return (
           <div key={idx} className="flex items-start gap-3">
             <div className="flex flex-col items-center">
               <div className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold
-                ${step.status === 'done'   ? (mismatchLast ? 'bg-amber-500 text-white' : 'bg-green-500 text-white')
-                : step.status === 'active' ? (mismatchLast ? 'bg-amber-500 text-white' : 'bg-[#ff4c16] text-white')
+                ${step.status === 'done'   ? 'bg-green-500 text-white'
+                : step.status === 'active' ? (isThisStepFailed ? 'bg-amber-500 text-white' : 'bg-[#ff4c16] text-white')
                 : 'bg-[#e0e0e0] text-[#aaa]'}`}>
-                {step.status === 'done'   ? (mismatchLast ? <X size={11} /> : <Check size={11} />)
-                : step.status === 'active' ? (mismatchLast ? <X size={11} /> : <Loader2 size={11} className="animate-spin" />)
+                {step.status === 'done'   ? <Check size={11} />
+                : step.status === 'active' ? (isThisStepFailed ? <X size={11} /> : <Loader2 size={11} className="animate-spin" />)
                 : <span>{idx + 1}</span>}
               </div>
               {idx < steps.length - 1 && <div className={`mt-0.5 h-3 w-0.5 ${step.status === 'done' ? 'bg-green-400' : 'bg-[#e0e0e0]'}`} />}
             </div>
             <p className={`pt-0.5 text-[11px] leading-snug
-              ${step.status === 'done'   ? (mismatchLast ? 'text-amber-700 font-medium' : 'text-green-700 font-medium')
-              : step.status === 'active' ? 'text-[#333] font-semibold'
+              ${step.status === 'done'   ? 'text-green-700 font-medium'
+              : step.status === 'active' ? (isThisStepFailed ? 'text-amber-700 font-medium' : 'text-[#333] font-semibold')
               : 'text-[#bbb]'}`}>{step.label}</p>
           </div>
         );
@@ -192,6 +194,7 @@ export default function AirPeacePaymentFlow() {
 
   const [payer, setPayer]                   = useState<PayerDetails>({ ...PARTNER_PAYER });
   const [bankAccountName, setBankAccountName] = useState('');
+  const [mismatchAttempts, setMismatchAttempts] = useState(0);
 
   const [timer, setTimer]                   = useState(600);
   const [redirectCountdown, setRedirectCountdown] = useState(15);
@@ -263,6 +266,7 @@ export default function AirPeacePaymentFlow() {
     setTimer(600);
     setRedirectCountdown(15);
     setBankAccountName('');
+    setMismatchAttempts(0);
     setAccountType(null);
   }, []);
 
@@ -335,10 +339,11 @@ export default function AirPeacePaymentFlow() {
     const errors: FieldErrors = {};
     if (!payer.firstName.trim()) errors.firstName = 'First name is required';
     if (!payer.lastName.trim())  errors.lastName  = 'Last name is required';
-    if (!payer.dob.trim())       errors.dob       = 'Date of birth is required';
-    if (!payer.mobile.trim())    errors.mobile    = 'Mobile number is required';
-    if (!payer.address.trim())   errors.address   = 'Address is required';
-    if (!payer.postcode.trim())  errors.postcode  = 'Postcode is required';
+    if (!payer.email?.trim())    errors.email     = 'Email is required';
+    if (!payer.dob?.trim())       errors.dob       = 'Date of birth is required';
+    if (!payer.addressLine1?.trim())   errors.addressLine1   = 'Address line 1 is required';
+    if (!payer.city?.trim())   errors.city   = 'City is required';
+    if (!payer.postcode?.trim())  errors.postcode  = 'Postcode is required';
     if (Object.keys(errors).length > 0) { setFieldErrors(errors); addToast('Please fill in all required fields.'); return; }
     setPrevPaymentStage('personal-form');
     setStage('review');
@@ -367,7 +372,19 @@ export default function AirPeacePaymentFlow() {
   }, [hasAcknowledgedWarning]);
 
   // ---- Post-payment stage transitions ----
-  useEffect(() => { if (stage !== 'processing') return; const id = setTimeout(() => setStage('awaiting'), 3000);  return () => clearTimeout(id); }, [stage]);
+  useEffect(() => { 
+    if (stage !== 'processing') return; 
+    const id = setTimeout(() => {
+      if (expectedOutcome === 'MISMATCH' && accountType === 'PERSONAL') {
+        setBankAccountName(MOCK_MISMATCH_BANK_NAME);
+        setMismatchAttempts(prev => prev + 1);
+        setStage('mismatch');
+      } else {
+        setStage('awaiting');
+      }
+    }, 3000);  
+    return () => clearTimeout(id); 
+  }, [stage, expectedOutcome, accountType]);
   useEffect(() => { if (stage !== 'awaiting')   return; const id = setTimeout(() => setStage('received'), 5000);  return () => clearTimeout(id); }, [stage]);
   useEffect(() => {
     if (stage !== 'received') return;
@@ -481,6 +498,18 @@ export default function AirPeacePaymentFlow() {
                 onSelectPersonal={handleSelectPersonal}
                 onSelectCompany={handleSelectCompany}
                 onConfirmPersonal={() => {
+                  const errors: FieldErrors = {};
+                  if (!payer.dob?.trim()) errors.dob = 'Date of birth is required';
+                  if (!payer.addressLine1?.trim()) errors.addressLine1 = 'Address Line 1 is required';
+                  if (!payer.city?.trim()) errors.city = 'City is required';
+                  if (!payer.postcode?.trim()) errors.postcode = 'Postcode is required';
+
+                  if (Object.keys(errors).length > 0) {
+                    setFieldErrors(errors);
+                    addToast('Please fill in all required fields.');
+                    return;
+                  }
+
                   // Ensure partner name is always set before payment (guards against edge case where names were cleared)
                   if (!payer.firstName.trim() && !payer.lastName.trim()) {
                     setPayer(prev => ({ ...prev, firstName: PARTNER_DATA.firstName, middleName: PARTNER_DATA.middleName, lastName: PARTNER_DATA.lastName }));
@@ -573,6 +602,8 @@ export default function AirPeacePaymentFlow() {
               <MismatchScreen
                 payerName={getPayerFullName(payer)}
                 bankName={bankAccountName}
+                attempts={mismatchAttempts}
+                onRestart={handleRestart}
                 onCorrectDetails={() => {
                   setHasAcknowledgedWarning(false);
                   setPayer(prev => ({ ...prev, firstName: '', middleName: '', lastName: '' }));
@@ -776,10 +807,65 @@ function DetailsScreen({
             {/* Payer details + warning card */}
             <div className="overflow-hidden rounded-xl bg-white px-4 py-4 shadow-sm border border-[#e0e0e0]">
               <h3 className="text-[14px] font-bold text-[#3a3a3a] mb-3">Payer Information</h3>
-              <div className="bg-[#f8f8f8] px-3 py-2.5 rounded-lg">
+              <div className="bg-[#f8f8f8] px-3 py-2.5 rounded-lg mb-4">
                 <DataRow label="Payer Name" value={getPayerFullName(payer)} />
                 <DataRow label="Email"      value={payer.email} />
               </div>
+
+              <div className="space-y-4 mb-4">
+                <div className="bg-[#f4f4f4] p-3 rounded-lg border border-[#e5e5e5]">
+                  <label className="text-[11px] text-[#717171] font-bold">Date of Birth</label>
+                  <input
+                    value={payer.dob}
+                    onChange={e => onFieldChange?.('dob', e.target.value)}
+                    placeholder="DD/MM/YYYY"
+                    className={`mt-1 w-full rounded border px-3 py-2.5 text-[12px] bg-white ${fieldErrors?.dob ? 'border-red-400' : 'border-[#d5d5d5]'}`}
+                  />
+                  {fieldErrors?.dob && <p className="mt-1 text-[11px] text-red-500">{fieldErrors.dob}</p>}
+                </div>
+
+                <div className="bg-[#f4f4f4] p-3 rounded-lg border border-[#e5e5e5]">
+                  <label className="text-[11px] text-[#717171] font-bold mb-2 block">Address</label>
+                  <div className="space-y-2">
+                    <div>
+                      <input
+                        value={payer.addressLine1}
+                        onChange={e => onFieldChange?.('addressLine1', e.target.value)}
+                        placeholder="Address Line 1"
+                        className={`w-full rounded border px-3 py-2.5 text-[12px] bg-white ${fieldErrors?.addressLine1 ? 'border-red-400' : 'border-[#d5d5d5]'}`}
+                      />
+                      {fieldErrors?.addressLine1 && <p className="mt-1 text-[11px] text-red-500">{fieldErrors.addressLine1}</p>}
+                    </div>
+                    <input
+                      value={payer.addressLine2}
+                      onChange={e => onFieldChange?.('addressLine2', e.target.value)}
+                      placeholder="Address Line 2 (Optional)"
+                      className="w-full rounded border border-[#d5d5d5] px-3 py-2.5 text-[12px] bg-white"
+                    />
+                    <div className="flex gap-2">
+                      <div className="flex-1">
+                        <input
+                          value={payer.city}
+                          onChange={e => onFieldChange?.('city', e.target.value)}
+                          placeholder="City"
+                          className={`w-full rounded border px-3 py-2.5 text-[12px] bg-white ${fieldErrors?.city ? 'border-red-400' : 'border-[#d5d5d5]'}`}
+                        />
+                        {fieldErrors?.city && <p className="mt-1 text-[11px] text-red-500">{fieldErrors.city}</p>}
+                      </div>
+                      <div className="w-[40%]">
+                        <input
+                          value={payer.postcode}
+                          onChange={e => onFieldChange?.('postcode', e.target.value)}
+                          placeholder="Post Code"
+                          className={`w-full rounded border px-3 py-2.5 text-[12px] bg-white ${fieldErrors?.postcode ? 'border-red-400' : 'border-[#d5d5d5]'}`}
+                        />
+                        {fieldErrors?.postcode && <p className="mt-1 text-[11px] text-red-500">{fieldErrors.postcode}</p>}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800 flex items-start gap-2">
                 <AlertCircle size={14} className="mt-0.5 flex-shrink-0 text-amber-500" />
                 <span>The bank account used for payment must be in the payer's name. Mismatches will cause verification to fail and funds to be returned.</span>
@@ -886,7 +972,8 @@ function DetailsScreen({
 function PersonalFormScreen({ payer, fieldErrors, onFieldChange, onContinue, onBack }: {
   payer: PayerDetails; fieldErrors: FieldErrors; onFieldChange: (f: keyof PayerDetails, v: string) => void; onContinue: () => void; onBack: () => void;
 }) {
-  const canContinue = payer.firstName.trim().length > 0 && payer.lastName.trim().length > 0;
+  const [isEditingEmail, setIsEditingEmail] = useState(false);
+  const canContinue = payer.firstName.trim().length > 0 && payer.lastName.trim().length > 0 && payer.email.trim().length > 0;
   return (
     <section className="flex flex-col px-3 pb-4">
       <button onClick={onBack} className="mb-2 flex items-center gap-1 text-[12px] text-[#777]"><ArrowLeft size={14} /> Back</button>
@@ -915,10 +1002,21 @@ function PersonalFormScreen({ payer, fieldErrors, onFieldChange, onContinue, onB
           {fieldErrors.lastName && <p className="mt-1 text-[11px] text-red-500">{fieldErrors.lastName}</p>}
         </div>
 
-        {/* Email — pre-filled and disabled */}
+        {/* Email Address */}
         <div className="bg-[#f8f8f8] p-3 rounded-lg border border-[#e5e5e5] mb-3">
-          <label className="text-[11px] text-[#717171] font-semibold">Email Address</label>
-          <input value={payer.email} disabled className="mt-1 w-full rounded bg-[#efefef] px-3 py-2 text-[12px] border border-[#d5d5d5] text-[#888] cursor-not-allowed" />
+          <div className="flex justify-between items-center mb-1">
+            <label className="text-[11px] text-[#717171] font-semibold">Email Address</label>
+            {!isEditingEmail && (
+              <button type="button" onClick={() => setIsEditingEmail(true)} className="text-[11px] font-semibold text-[#2a5f9e] underline">Edit email</button>
+            )}
+          </div>
+          <input 
+            value={payer.email} 
+            disabled={!isEditingEmail}
+            onChange={e => onFieldChange('email', e.target.value)} 
+            className={`w-full rounded px-3 py-2 text-[12px] border ${isEditingEmail ? (fieldErrors.email ? 'bg-white border-red-400 text-[#333]' : 'bg-white border-[#d5d5d5] text-[#333]') : 'bg-[#efefef] border-[#d5d5d5] text-[#888] cursor-not-allowed'}`} 
+          />
+          {fieldErrors.email && <p className="mt-1 text-[11px] text-red-500">{fieldErrors.email}</p>}
         </div>
 
         {/* DOB + Mobile */}
@@ -929,7 +1027,7 @@ function PersonalFormScreen({ payer, fieldErrors, onFieldChange, onContinue, onB
               className={`mt-1 w-full rounded bg-white px-3 py-2 text-[12px] border ${fieldErrors.dob ? 'border-red-400' : 'border-[#d5d5d5]'}`} />
           </div>
           <div className="bg-[#f8f8f8] p-3 rounded-lg border border-[#e5e5e5]">
-            <label className="text-[11px] text-[#717171] font-semibold">Mobile Number</label>
+            <label className="text-[11px] text-[#717171] font-semibold">Mobile Number (Optional)</label>
             <input value={payer.mobile} onChange={e => onFieldChange('mobile', e.target.value)} placeholder="+44 7911 123456"
               className={`mt-1 w-full rounded bg-white px-3 py-2 text-[12px] border ${fieldErrors.mobile ? 'border-red-400' : 'border-[#d5d5d5]'}`} />
           </div>
@@ -937,11 +1035,24 @@ function PersonalFormScreen({ payer, fieldErrors, onFieldChange, onContinue, onB
 
         {/* Home Address */}
         <div className="bg-[#f8f8f8] p-3 rounded-lg border border-[#e5e5e5]">
-          <label className="text-[11px] text-[#717171] font-semibold">Home Address</label>
-          <input value={payer.address} onChange={e => onFieldChange('address', e.target.value)} placeholder="123 Example Street"
-            className={`mt-1 w-full rounded bg-white px-3 py-2 text-[12px] border ${fieldErrors.address ? 'border-red-400' : 'border-[#d5d5d5]'}`} />
-          <input value={payer.postcode} onChange={e => onFieldChange('postcode', e.target.value)} placeholder="SW1A 1AA"
-            className={`mt-2 w-full rounded bg-white px-3 py-2 text-[12px] border ${fieldErrors.postcode ? 'border-red-400' : 'border-[#d5d5d5]'}`} />
+          <label className="text-[11px] text-[#717171] font-semibold mb-2 block">Home Address</label>
+          <input value={payer.addressLine1} onChange={e => onFieldChange('addressLine1', e.target.value)} placeholder="Address Line 1"
+            className={`w-full rounded bg-white px-3 py-2 text-[12px] border ${fieldErrors.addressLine1 ? 'border-red-400' : 'border-[#d5d5d5]'}`} />
+          {fieldErrors.addressLine1 && <p className="mt-1 text-[11px] text-red-500">{fieldErrors.addressLine1}</p>}
+          <input value={payer.addressLine2} onChange={e => onFieldChange('addressLine2', e.target.value)} placeholder="Address Line 2 (Optional)"
+            className="mt-2 w-full rounded bg-white px-3 py-2 text-[12px] border border-[#d5d5d5]" />
+          <div className="flex gap-2 mt-2">
+            <div className="flex-1">
+              <input value={payer.city} onChange={e => onFieldChange('city', e.target.value)} placeholder="City"
+                className={`w-full rounded bg-white px-3 py-2 text-[12px] border ${fieldErrors.city ? 'border-red-400' : 'border-[#d5d5d5]'}`} />
+              {fieldErrors.city && <p className="mt-1 text-[11px] text-red-500">{fieldErrors.city}</p>}
+            </div>
+            <div className="w-[40%]">
+              <input value={payer.postcode} onChange={e => onFieldChange('postcode', e.target.value)} placeholder="Post code"
+                className={`w-full rounded bg-white px-3 py-2 text-[12px] border ${fieldErrors.postcode ? 'border-red-400' : 'border-[#d5d5d5]'}`} />
+              {fieldErrors.postcode && <p className="mt-1 text-[11px] text-red-500">{fieldErrors.postcode}</p>}
+            </div>
+          </div>
         </div>
       </Panel>
 
@@ -1074,7 +1185,7 @@ function AwaitingScreen({ timer, isUrgent }: { timer: string; isUrgent: boolean 
       </Panel>
       <Panel>
         <h3 className="text-[13px] font-bold text-[#333] mb-3">Payment Status</h3>
-        <StatusTracker activeStep={2} />
+        <StatusTracker activeStep={3} />
       </Panel>
       <Panel>
         <div className="flex items-center gap-2 text-[12px] text-[#666]">
@@ -1102,7 +1213,7 @@ function ReceivedScreen({ timer, isUrgent }: { timer: string; isUrgent: boolean 
       </Panel>
       <Panel>
         <h3 className="text-[13px] font-bold text-[#333] mb-3">Payment Status</h3>
-        <StatusTracker activeStep={4} />
+        <StatusTracker activeStep={5} />
       </Panel>
       <Panel>
         <div className="flex items-center gap-2 text-[12px] text-[#666]">
@@ -1137,7 +1248,7 @@ function SuccessScreen({ redirectCountdown, onReturnNow }: { redirectCountdown: 
       </div>
       <Panel>
         <h3 className="text-[13px] font-bold text-[#333] mb-3">Payment Status</h3>
-        <StatusTracker activeStep={6} isComplete />
+        <StatusTracker activeStep={7} isComplete />
       </Panel>
     </section>
   );
@@ -1146,42 +1257,102 @@ function SuccessScreen({ redirectCountdown, onReturnNow }: { redirectCountdown: 
 // ==========================================
 // SCREEN 7B: NAME MISMATCH (Personal only)
 // ==========================================
-function MismatchScreen({ payerName, bankName, onCorrectDetails, onRefunding }: { payerName: string; bankName: string; onCorrectDetails: () => void; onRefunding: () => void }) {
+function MismatchScreen({ payerName, bankName, attempts, onCorrectDetails, onRefunding, onRestart }: { payerName: string; bankName: string; attempts: number; onCorrectDetails: () => void; onRefunding: () => void; onRestart: () => void }) {
+  const isBlocked = attempts >= 3;
+
   return (
     <section className="px-3 pb-4 space-y-3">
       <div className="overflow-hidden rounded-xl bg-white px-5 py-7 shadow-sm border-t-4 border-amber-500 text-center">
         <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 200, delay: 0.1 }}
-          className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-amber-100">
-          <AlertTriangle className="h-8 w-8 text-amber-600" />
+          className={`mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full ${isBlocked ? 'bg-red-100' : 'bg-amber-100'}`}>
+          <AlertTriangle className={`h-8 w-8 ${isBlocked ? 'text-red-600' : 'text-amber-600'}`} />
         </motion.div>
-        <h2 className="text-[20px] font-bold text-[#333]">We could not approve this payment</h2>
-        <p className="mt-2 text-[13px] text-[#666] leading-relaxed">The payer name you entered does not match the name on the bank account used for payment.</p>
-        <div className="mt-5 rounded-lg bg-[#f8f8f8] border border-[#e5e5e5] px-4 py-4 text-left space-y-3">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-[#999]">Name you provided</p>
-            <p className="mt-0.5 text-[14px] font-semibold text-[#333]">{payerName || '—'}</p>
-          </div>
-          <div className="border-t border-dashed border-[#ddd] pt-3">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-[#999]">Name on bank account received</p>
-            <p className="mt-0.5 text-[14px] font-semibold text-red-600">{bankName || '—'}</p>
-          </div>
-        </div>
-        <div className="mt-4 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2.5 text-[12px] text-amber-800 text-left flex items-start gap-2">
-          <Info size={14} className="mt-0.5 flex-shrink-0 text-amber-600" />
-          <span>For security and compliance reasons, your funds are being returned to the originating account. This typically takes 1–3 business days.</span>
-        </div>
-        <div className="mt-5 space-y-2">
-          <motion.button onClick={onCorrectDetails} whileTap={{ scale: 0.97 }} className="w-full rounded-lg bg-[#ff4c16] py-3 text-[14px] font-bold text-white flex items-center justify-center gap-2">
-            <FileEdit size={15} /> Correct payer details
-          </motion.button>
-          <motion.button onClick={onRefunding} whileTap={{ scale: 0.97 }} className="w-full rounded-lg border border-[#d5d5d5] bg-white py-3 text-[13px] font-semibold text-[#555] flex items-center justify-center gap-2">
-            <RefreshCcw size={14} /> Retry with a bank account in your name
-          </motion.button>
-        </div>
+        
+        {isBlocked ? (
+          <>
+            <h2 className="text-[20px] font-bold text-[#333]">Maximum attempts reached</h2>
+            <p className="mt-2 text-[13px] text-[#666] leading-relaxed mb-4">You have exceeded the maximum number of attempts to verify your identity.</p>
+            <div className="mt-4 rounded-lg bg-red-50 border border-red-200 px-3 py-2.5 text-[12px] text-red-800 text-left flex items-start gap-2">
+              <Info size={14} className="mt-0.5 flex-shrink-0 text-red-600" />
+              <span>For security reasons, this transaction has been permanently blocked. Please contact customer support for assistance or start a new payment.</span>
+            </div>
+            <div className="mt-5 space-y-2">
+              <motion.button onClick={() => window.location.href = 'mailto:support@airpeace.com'} whileTap={{ scale: 0.97 }} className="w-full rounded-lg bg-[#2a5f9e] py-3 text-[14px] font-bold text-white flex items-center justify-center gap-2">
+                Contact Customer Support
+              </motion.button>
+              <motion.button onClick={onRestart} whileTap={{ scale: 0.97 }} className="w-full rounded-lg border border-[#d5d5d5] bg-white py-3 text-[13px] font-semibold text-[#555] flex items-center justify-center gap-2">
+                <RefreshCcw size={14} /> Restart the process
+              </motion.button>
+            </div>
+          </>
+        ) : (
+          <>
+            <h2 className="text-[20px] font-bold text-[#333]">We could not approve this payment</h2>
+            <p className="mt-2 text-[13px] text-[#666] leading-relaxed mb-4">We could not verify your identity automatically.</p>
+            <motion.div 
+              initial={{ opacity: 0, y: 10, scale: 0.95 }} 
+              animate={{ 
+                opacity: 1, y: 0, scale: 1,
+                boxShadow: ["0px 1px 4px rgba(220,38,38,0.05)", "0px 4px 15px rgba(220,38,38,0.25)", "0px 1px 4px rgba(220,38,38,0.05)"]
+              }} 
+              transition={{ 
+                opacity: { duration: 0.3, delay: 0.2 },
+                y: { type: 'spring', stiffness: 300, damping: 20, delay: 0.2 },
+                scale: { type: 'spring', stiffness: 300, damping: 20, delay: 0.2 },
+                boxShadow: { repeat: Infinity, duration: 2.5, ease: "easeInOut", delay: 0.6 }
+              }}
+              className="mt-2 mb-2 relative overflow-hidden rounded-xl bg-gradient-to-r from-red-50 to-[#fffafa] border border-red-200/70 px-4 py-3 text-left"
+            >
+              <motion.div 
+                className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-red-400 to-red-600 shadow-[2px_0_6px_rgba(220,38,38,0.6)]"
+                initial={{ height: 0 }}
+                animate={{ height: '100%' }}
+                transition={{ duration: 0.5, delay: 0.3, ease: 'easeOut' }}
+              />
+              <p className="text-[13.5px] font-medium text-red-800/90 leading-relaxed relative z-10">
+                The payer name you entered <motion.strong 
+                  animate={{ color: ['#dc2626', '#991b1b', '#dc2626'] }}
+                  transition={{ repeat: Infinity, duration: 2.5, ease: "easeInOut", delay: 0.6 }}
+                  className="font-extrabold bg-red-100/90 text-red-600 px-1.5 py-0.5 rounded-md mx-0.5 border border-red-200/50 shadow-sm inline-block"
+                >
+                  does not match
+                </motion.strong> the name on the bank account used for payment.
+              </p>
+            </motion.div>
+            <motion.div 
+              initial={{ opacity: 0, y: 15 }} 
+              animate={{ opacity: 1, y: 0 }} 
+              transition={{ type: 'spring', stiffness: 200, delay: 0.3 }}
+              className="mt-5 rounded-lg bg-[#f8f8f8] border border-[#e5e5e5] px-4 py-4 text-left space-y-3"
+            >
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-[#999]">Name you provided</p>
+                <p className="mt-0.5 text-[14px] font-semibold text-[#333]">{payerName || '—'}</p>
+              </div>
+            </motion.div>
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }} 
+              animate={{ opacity: 1, scale: 1 }} 
+              transition={{ type: 'spring', stiffness: 200, delay: 0.4 }}
+              className="mt-4 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2.5 text-[12px] text-amber-800 text-left flex items-start gap-2"
+            >
+              <Info size={14} className="mt-0.5 flex-shrink-0 text-amber-600" />
+              <span>For security reasons, this transaction has been stopped before any funds were transferred.</span>
+            </motion.div>
+            <div className="mt-5 space-y-2">
+              <motion.button onClick={onCorrectDetails} whileTap={{ scale: 0.97 }} className="w-full rounded-lg bg-[#ff4c16] py-3 text-[14px] font-bold text-white flex items-center justify-center gap-2">
+                <FileEdit size={15} /> Correct payer details ({3 - attempts} attempt{3 - attempts !== 1 ? 's' : ''} left)
+              </motion.button>
+              <motion.button onClick={onRefunding} whileTap={{ scale: 0.97 }} className="w-full rounded-lg border border-[#d5d5d5] bg-white py-3 text-[13px] font-semibold text-[#555] flex items-center justify-center gap-2">
+                <RefreshCcw size={14} /> Retry with a bank account in your name
+              </motion.button>
+            </div>
+          </>
+        )}
       </div>
       <Panel>
         <h3 className="text-[13px] font-bold text-[#333] mb-3">Payment Status</h3>
-        <StatusTracker activeStep={5} isMismatch />
+        <StatusTracker activeStep={1} isMismatch />
       </Panel>
     </section>
   );
