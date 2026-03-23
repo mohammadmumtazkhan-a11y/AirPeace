@@ -218,6 +218,9 @@ export default function AirPeacePaymentFlow() {
 
   const [selectedScenario, setSelectedScenario] = useState<DemoScenario | null>(null);
 
+  const [paymentInitiated, setPaymentInitiated] = useState(false);
+  const [showCancelConfirmation, setShowCancelConfirmation] = useState(false);
+
   const toastIdRef      = useRef(0);
   const companyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -259,6 +262,8 @@ export default function AirPeacePaymentFlow() {
     setIsShowingWarningModal(false);
     setPrevPaymentStage('details');
     setPayer({ ...PARTNER_PAYER }); // pre-populate with partner data
+    setPaymentInitiated(false);
+    setShowCancelConfirmation(false);
     setStage('method');
   }, []);
 
@@ -271,6 +276,21 @@ export default function AirPeacePaymentFlow() {
     setBankAccountName('');
     setMismatchAttempts(0);
     setAccountType(null);
+    setPaymentInitiated(false);
+    setShowCancelConfirmation(false);
+  }, []);
+
+  // ---- Cancel transaction handlers ----
+  const handleCancelClick = useCallback(() => {
+    setShowCancelConfirmation(true);
+  }, []);
+
+  const handleCancelConfirm = useCallback(() => {
+    window.location.href = AIRPEACE_WEBSITE_URL;
+  }, []);
+
+  const handleCancelDismiss = useCallback(() => {
+    setShowCancelConfirmation(false);
   }, []);
 
   // ---- Summary → Details (account type selector) ----
@@ -375,18 +395,20 @@ export default function AirPeacePaymentFlow() {
   }, [hasAcknowledgedWarning]);
 
   // ---- Post-payment stage transitions ----
-  useEffect(() => { 
-    if (stage !== 'processing') return; 
+  useEffect(() => {
+    if (stage !== 'processing') return;
+    // Add delay for "Verify Name" step before payment initiation
     const id = setTimeout(() => {
       if (expectedOutcome === 'MISMATCH' && accountType === 'PERSONAL') {
         setBankAccountName(MOCK_MISMATCH_BANK_NAME);
         setMismatchAttempts(prev => prev + 1);
         setStage('mismatch');
       } else {
+        setPaymentInitiated(true); // Mark payment as initiated
         setStage('awaiting');
       }
-    }, 3000);  
-    return () => clearTimeout(id); 
+    }, 5000); // Increased from 3000 to 5000 for delay between Verify Name and Payment Initiated
+    return () => clearTimeout(id);
   }, [stage, expectedOutcome, accountType]);
   useEffect(() => { if (stage !== 'awaiting')   return; const id = setTimeout(() => setStage('received'), 5000);  return () => clearTimeout(id); }, [stage]);
   useEffect(() => {
@@ -469,6 +491,15 @@ export default function AirPeacePaymentFlow() {
           )}
         </AnimatePresence>
 
+        <AnimatePresence>
+          {showCancelConfirmation && (
+            <CancelConfirmationModal
+              onConfirm={handleCancelConfirm}
+              onDismiss={handleCancelDismiss}
+            />
+          )}
+        </AnimatePresence>
+
         {stage !== 'scenario' && stage !== 'method' && <HeaderLogo />}
 
         <AnimatePresence mode="wait">
@@ -488,7 +519,7 @@ export default function AirPeacePaymentFlow() {
           {/* Screen 1: Entry / Payment Start */}
           {stage === 'summary' && (
             <motion.div key="summary" {...pageVariants}>
-              <SummaryScreen timer={timerDisplay} onContinue={handleAfterSummary} />
+              <SummaryScreen timer={timerDisplay} onContinue={handleAfterSummary} onCancel={handleCancelClick} paymentInitiated={paymentInitiated} />
             </motion.div>
           )}
 
@@ -533,6 +564,8 @@ export default function AirPeacePaymentFlow() {
                   setStage('personal-form');
                 }}
                 onBack={() => setStage('summary')}
+                onCancel={handleCancelClick}
+                paymentInitiated={paymentInitiated}
               />
             </motion.div>
           )}
@@ -553,6 +586,8 @@ export default function AirPeacePaymentFlow() {
                   setAccountType(null);
                   setStage('details');
                 }}
+                onCancel={handleCancelClick}
+                paymentInitiated={paymentInitiated}
               />
             </motion.div>
           )}
@@ -567,6 +602,8 @@ export default function AirPeacePaymentFlow() {
                 accountType={accountType!}
                 onSubmit={() => handleConfirmAndPay()}
                 onBack={() => setStage(prevPaymentStage)}
+                onCancel={handleCancelClick}
+                paymentInitiated={paymentInitiated}
               />
             </motion.div>
           )}
@@ -574,21 +611,21 @@ export default function AirPeacePaymentFlow() {
           {/* Screen 4: Redirecting */}
           {stage === 'processing' && (
             <motion.div key="processing" {...pageVariants}>
-              <ProcessingScreen timer={timerDisplay} isUrgent={isTimerUrgent} />
+              <ProcessingScreen timer={timerDisplay} isUrgent={isTimerUrgent} onCancel={handleCancelClick} paymentInitiated={paymentInitiated} />
             </motion.div>
           )}
 
           {/* Screen 5: Awaiting funds */}
           {stage === 'awaiting' && (
             <motion.div key="awaiting" {...pageVariants}>
-              <AwaitingScreen timer={timerDisplay} isUrgent={isTimerUrgent} />
+              <AwaitingScreen timer={timerDisplay} isUrgent={isTimerUrgent} onCancel={handleCancelClick} paymentInitiated={paymentInitiated} />
             </motion.div>
           )}
 
           {/* Screen 6: Received / Validating */}
           {stage === 'received' && (
             <motion.div key="received" {...pageVariants}>
-              <ReceivedScreen timer={timerDisplay} isUrgent={isTimerUrgent} />
+              <ReceivedScreen timer={timerDisplay} isUrgent={isTimerUrgent} onCancel={handleCancelClick} paymentInitiated={paymentInitiated} />
             </motion.div>
           )}
 
@@ -613,12 +650,14 @@ export default function AirPeacePaymentFlow() {
                   setStage('personal-form');
                 }}
                 onRefunding={() => setStage('refunding')}
+                onCancel={handleCancelClick}
+                paymentInitiated={paymentInitiated}
               />
             </motion.div>
           )}
 
           {stage === 'refunding' && (
-            <motion.div key="refunding" {...pageVariants}><RefundingScreen /></motion.div>
+            <motion.div key="refunding" {...pageVariants}><RefundingScreen onCancel={handleCancelClick} paymentInitiated={paymentInitiated} /></motion.div>
           )}
 
           {/* Screen 7C: Funds returned */}
@@ -631,6 +670,8 @@ export default function AirPeacePaymentFlow() {
                   setStage('personal-form');
                 }}
                 onRestart={handleRestart}
+                onCancel={handleCancelClick}
+                paymentInitiated={paymentInitiated}
               />
             </motion.div>
           )}
@@ -641,6 +682,8 @@ export default function AirPeacePaymentFlow() {
               <FailureScreen
                 onRetryBank={() => setStage('processing')}
                 onRestartNew={() => { setHasAcknowledgedWarning(false); setAccountType(null); setStage('details'); }}
+                onCancel={handleCancelClick}
+                paymentInitiated={paymentInitiated}
               />
             </motion.div>
           )}
@@ -654,7 +697,7 @@ export default function AirPeacePaymentFlow() {
 
           {stage === 'pending' && (
             <motion.div key="pending" {...pageVariants}>
-              <PendingScreen onRestart={handleRestart} />
+              <PendingScreen onRestart={handleRestart} onCancel={handleCancelClick} paymentInitiated={paymentInitiated} />
             </motion.div>
           )}
 
@@ -737,9 +780,9 @@ function MethodSelectionScreen({ onContinue, onBack, scenario }: { onContinue: (
 // ==========================================
 // SCREEN 1: ENTRY / PAYMENT START
 // ==========================================
-function SummaryScreen({ timer, onContinue }: { timer: string; onContinue: () => void }) {
+function SummaryScreen({ timer, onContinue, onCancel, paymentInitiated = false }: { timer: string; onContinue: () => void; onCancel: () => void; paymentInitiated?: boolean }) {
   return (
-    <section className="px-3 pb-4">
+    <section className="px-3 pb-4 space-y-3">
       <div className="overflow-hidden rounded-xl bg-white px-4 py-5 shadow-sm">
         <Brand />
         <div className="mt-5 space-y-2 rounded-lg bg-[#f4f4f4] px-4 py-3 text-[13px]">
@@ -759,6 +802,7 @@ function SummaryScreen({ timer, onContinue }: { timer: string; onContinue: () =>
           Continue
         </motion.button>
       </div>
+      <CancelTransactionButton onClick={onCancel} disabled={paymentInitiated} />
     </section>
   );
 }
@@ -769,7 +813,7 @@ function SummaryScreen({ timer, onContinue }: { timer: string; onContinue: () =>
 function DetailsScreen({
   accountType, payer, onSelectPersonal, onSelectCompany, onConfirmPersonal, onConfirmCompany,
   onUseDifferent, onBack, companyLoading, companyLoaded, directorLoading, directorLoaded,
-  onFieldChange, onCompanyRegChange, onDirectorSelect, fieldErrors = {}
+  onFieldChange, onCompanyRegChange, onDirectorSelect, fieldErrors = {}, onCancel, paymentInitiated
 }: {
   accountType: AccountType | null;
   payer: PayerDetails;
@@ -787,10 +831,12 @@ function DetailsScreen({
   onCompanyRegChange?: (v: string) => void;
   onDirectorSelect?: (v: string) => void;
   fieldErrors?: FieldErrors;
+  onCancel: () => void;
+  paymentInitiated?: boolean;
 }) {
   const canContinueCompany = companyLoaded && directorLoaded;
   return (
-    <section className="flex flex-col px-3 pb-4">
+    <section className="flex flex-col px-3 pb-4 space-y-3">
       <button onClick={onBack} className="mb-2 flex items-center gap-1 text-[12px] text-[#777]"><ArrowLeft size={14} /> Back</button>
       <Panel>
         <div className="flex items-start gap-2 text-[#3b7dd8] bg-[#e7f2ff] px-3 py-2.5 rounded-lg border border-[#9ac6f4] text-[12px] mb-4">
@@ -963,6 +1009,7 @@ function DetailsScreen({
           </motion.div>
         )}
       </AnimatePresence>
+      <CancelTransactionButton onClick={onCancel} disabled={paymentInitiated} />
     </section>
   );
 }
@@ -972,13 +1019,13 @@ function DetailsScreen({
 // ==========================================
 // PERSONAL: MANUAL FORM (Use different details)
 // ==========================================
-function PersonalFormScreen({ payer, fieldErrors, onFieldChange, onContinue, onBack }: {
-  payer: PayerDetails; fieldErrors: FieldErrors; onFieldChange: (f: keyof PayerDetails, v: string) => void; onContinue: () => void; onBack: () => void;
+function PersonalFormScreen({ payer, fieldErrors, onFieldChange, onContinue, onBack, onCancel, paymentInitiated }: {
+  payer: PayerDetails; fieldErrors: FieldErrors; onFieldChange: (f: keyof PayerDetails, v: string) => void; onContinue: () => void; onBack: () => void; onCancel: () => void; paymentInitiated?: boolean;
 }) {
   const [isEditingEmail, setIsEditingEmail] = useState(false);
   const canContinue = payer.firstName.trim().length > 0 && payer.lastName.trim().length > 0 && payer.email.trim().length > 0;
   return (
-    <section className="flex flex-col px-3 pb-4">
+    <section className="flex flex-col px-3 pb-4 space-y-3">
       <button onClick={onBack} className="mb-2 flex items-center gap-1 text-[12px] text-[#777]"><ArrowLeft size={14} /> Back</button>
       <Panel>
         <h3 className="text-[14px] font-semibold text-[#3a3a3a] mb-3">Payer Information</h3>
@@ -1063,6 +1110,7 @@ function PersonalFormScreen({ payer, fieldErrors, onFieldChange, onContinue, onB
         className={`mt-4 w-full rounded-lg py-3 text-[18px] font-bold text-white shadow-sm transition-all ${canContinue ? 'bg-[#ff4c16] hover:bg-[#e64516]' : 'cursor-not-allowed bg-[#efb8a8]'}`}>
         Review details
       </motion.button>
+      <CancelTransactionButton onClick={onCancel} disabled={paymentInitiated} />
     </section>
   );
 }
@@ -1072,10 +1120,10 @@ function PersonalFormScreen({ payer, fieldErrors, onFieldChange, onContinue, onB
 // ==========================================
 // SCREEN 3: REVIEW PAYER DETAILS
 // ==========================================
-function ReviewScreen({ payer, accountType, onSubmit, onBack }: { payer: PayerDetails; accountType: AccountType; onSubmit: () => void; onBack: () => void }) {
+function ReviewScreen({ payer, accountType, onSubmit, onBack, onCancel, paymentInitiated }: { payer: PayerDetails; accountType: AccountType; onSubmit: () => void; onBack: () => void; onCancel: () => void; paymentInitiated?: boolean }) {
   const isCompany = accountType === 'COMPANY';
   return (
-    <section className="flex flex-col px-3 pb-4">
+    <section className="flex flex-col px-3 pb-4 space-y-3">
       <button onClick={onBack} className="mb-2 flex items-center gap-1 text-[12px] text-[#777]"><ArrowLeft size={14} /> Back</button>
       <Panel>
         <h2 className="text-[15px] font-semibold text-[#3a3a3a]">Review your payer details</h2>
@@ -1111,6 +1159,7 @@ function ReviewScreen({ payer, accountType, onSubmit, onBack }: { payer: PayerDe
       <button onClick={onBack} className="mt-2 w-full rounded-lg border border-[#ccc] bg-white py-2.5 text-[13px] font-semibold text-[#666]">
         Edit details
       </button>
+      <CancelTransactionButton onClick={onCancel} disabled={paymentInitiated} />
     </section>
   );
 }
@@ -1147,9 +1196,9 @@ function ImportantInformationModal({ onConfirm, onBack }: { onConfirm: () => voi
 // ==========================================
 // SCREEN 4: REDIRECTING TO BANK
 // ==========================================
-function ProcessingScreen({ timer, isUrgent }: { timer: string; isUrgent: boolean }) {
+function ProcessingScreen({ timer, isUrgent, onCancel, paymentInitiated = false }: { timer: string; isUrgent: boolean; onCancel: () => void; paymentInitiated?: boolean }) {
   return (
-    <section className="px-3">
+    <section className="px-3 pb-4 space-y-3">
       <div className="overflow-hidden rounded-xl bg-white px-4 py-8 shadow-sm text-center">
         <Brand />
         <div className="mt-6 flex items-center justify-center">
@@ -1168,6 +1217,7 @@ function ProcessingScreen({ timer, isUrgent }: { timer: string; isUrgent: boolea
           <ShieldCheck size={12} /><span>Secured by Mito.Money</span>
         </div>
       </div>
+      <CancelTransactionButton onClick={onCancel} disabled={paymentInitiated} />
     </section>
   );
 }
@@ -1175,7 +1225,7 @@ function ProcessingScreen({ timer, isUrgent }: { timer: string; isUrgent: boolea
 // ==========================================
 // SCREEN 5: AWAITING FUNDS
 // ==========================================
-function AwaitingScreen({ timer, isUrgent }: { timer: string; isUrgent: boolean }) {
+function AwaitingScreen({ timer, isUrgent, onCancel, paymentInitiated = false }: { timer: string; isUrgent: boolean; onCancel: () => void; paymentInitiated?: boolean }) {
   return (
     <section className="px-3 pb-4 space-y-3">
       <Panel>
@@ -1196,6 +1246,7 @@ function AwaitingScreen({ timer, isUrgent }: { timer: string; isUrgent: boolean 
           <span>Waiting to receive your funds...</span>
         </div>
       </Panel>
+      <CancelTransactionButton onClick={onCancel} disabled={paymentInitiated} />
     </section>
   );
 }
@@ -1203,7 +1254,7 @@ function AwaitingScreen({ timer, isUrgent }: { timer: string; isUrgent: boolean 
 // ==========================================
 // SCREEN 6: FUNDS RECEIVED / VALIDATING
 // ==========================================
-function ReceivedScreen({ timer, isUrgent }: { timer: string; isUrgent: boolean }) {
+function ReceivedScreen({ timer, isUrgent, onCancel, paymentInitiated }: { timer: string; isUrgent: boolean; onCancel: () => void; paymentInitiated?: boolean }) {
   return (
     <section className="px-3 pb-4 space-y-3">
       <Panel>
@@ -1224,6 +1275,7 @@ function ReceivedScreen({ timer, isUrgent }: { timer: string; isUrgent: boolean 
           <span>Validating bank account name against payer details...</span>
         </div>
       </Panel>
+      <CancelTransactionButton onClick={onCancel} disabled={paymentInitiated} />
     </section>
   );
 }
@@ -1260,7 +1312,7 @@ function SuccessScreen({ redirectCountdown, onReturnNow }: { redirectCountdown: 
 // ==========================================
 // SCREEN 7B: NAME MISMATCH (Personal only)
 // ==========================================
-function MismatchScreen({ payerName, bankName, attempts, onCorrectDetails, onRefunding, onRestart }: { payerName: string; bankName: string; attempts: number; onCorrectDetails: () => void; onRefunding: () => void; onRestart: () => void }) {
+function MismatchScreen({ payerName, bankName, attempts, onCorrectDetails, onRefunding, onRestart, onCancel, paymentInitiated }: { payerName: string; bankName: string; attempts: number; onCorrectDetails: () => void; onRefunding: () => void; onRestart: () => void; onCancel: () => void; paymentInitiated?: boolean }) {
   const isBlocked = attempts >= 3;
 
   return (
@@ -1286,9 +1338,7 @@ function MismatchScreen({ payerName, bankName, attempts, onCorrectDetails, onRef
               <motion.button onClick={onRestart} whileTap={{ scale: 0.97 }} className="w-full rounded-lg border border-[#d5d5d5] bg-white py-3 text-[13px] font-semibold text-[#555] flex items-center justify-center gap-2">
                 <RefreshCcw size={14} /> Restart the process
               </motion.button>
-              <motion.button onClick={() => window.location.href = AIRPEACE_WEBSITE_URL} whileTap={{ scale: 0.97 }} className="w-full py-3 text-[13px] font-semibold text-red-600 hover:text-red-700">
-                Cancel
-              </motion.button>
+              <CancelTransactionButton onClick={onCancel} disabled={paymentInitiated} />
             </div>
           </>
         ) : (
@@ -1352,9 +1402,7 @@ function MismatchScreen({ payerName, bankName, attempts, onCorrectDetails, onRef
               <motion.button onClick={onRefunding} whileTap={{ scale: 0.97 }} className="w-full rounded-lg border border-[#d5d5d5] bg-white py-3 text-[13px] font-semibold text-[#555] flex items-center justify-center gap-2">
                 <RefreshCcw size={14} /> Retry with a bank account in your name
               </motion.button>
-              <motion.button onClick={() => window.location.href = AIRPEACE_WEBSITE_URL} whileTap={{ scale: 0.97 }} className="w-full py-3 text-[13px] font-semibold text-red-600 hover:text-red-700">
-                Cancel
-              </motion.button>
+              <CancelTransactionButton onClick={onCancel} disabled={paymentInitiated} />
             </div>
           </>
         )}
@@ -1370,9 +1418,9 @@ function MismatchScreen({ payerName, bankName, attempts, onCorrectDetails, onRef
 // ==========================================
 // REFUNDING (Transitional)
 // ==========================================
-function RefundingScreen() {
+function RefundingScreen({ onCancel, paymentInitiated }: { onCancel: () => void; paymentInitiated?: boolean }) {
   return (
-    <section className="px-3">
+    <section className="px-3 space-y-3">
       <div className="overflow-hidden rounded-xl bg-white px-5 py-10 shadow-sm text-center">
         <Brand />
         <div className="mt-6 flex justify-center">
@@ -1383,6 +1431,7 @@ function RefundingScreen() {
         <h2 className="mt-5 text-[18px] font-bold text-[#333]">Returning your funds</h2>
         <p className="mt-2 text-[13px] text-[#666]">Please wait while we process the return of your funds.</p>
       </div>
+      <CancelTransactionButton onClick={onCancel} disabled={paymentInitiated} />
     </section>
   );
 }
@@ -1390,9 +1439,9 @@ function RefundingScreen() {
 // ==========================================
 // SCREEN 7C: FUNDS RETURNED SUCCESSFULLY
 // ==========================================
-function RefundedScreen({ onCorrectDetails, onRestart }: { onCorrectDetails: () => void; onRestart: () => void }) {
+function RefundedScreen({ onCorrectDetails, onRestart, onCancel, paymentInitiated }: { onCorrectDetails: () => void; onRestart: () => void; onCancel: () => void; paymentInitiated?: boolean }) {
   return (
-    <section className="px-3 pb-4">
+    <section className="px-3 pb-4 space-y-3">
       <div className="overflow-hidden rounded-xl bg-white px-5 py-8 shadow-sm text-center border-t-4 border-blue-500">
         <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 200, delay: 0.1 }}
           className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-blue-100">
@@ -1409,6 +1458,7 @@ function RefundedScreen({ onCorrectDetails, onRestart }: { onCorrectDetails: () 
           </motion.button>
         </div>
       </div>
+      <CancelTransactionButton onClick={onCancel} disabled={paymentInitiated} />
     </section>
   );
 }
@@ -1416,9 +1466,9 @@ function RefundedScreen({ onCorrectDetails, onRestart }: { onCorrectDetails: () 
 // ==========================================
 // FAILURE (Insufficient Funds)
 // ==========================================
-function FailureScreen({ onRetryBank, onRestartNew }: { onRetryBank: () => void; onRestartNew: () => void }) {
+function FailureScreen({ onRetryBank, onRestartNew, onCancel, paymentInitiated }: { onRetryBank: () => void; onRestartNew: () => void; onCancel: () => void; paymentInitiated?: boolean }) {
   return (
-    <section className="px-3 pb-8">
+    <section className="px-3 pb-8 space-y-3">
       <div className="overflow-hidden rounded-xl bg-white px-5 py-8 text-center border-t-4 border-red-500 shadow-sm">
         <X className="mx-auto h-12 w-12 text-red-500 bg-red-50 rounded-full p-2 mb-4" />
         <h2 className="text-[20px] font-bold text-[#333]">Payment Declined</h2>
@@ -1432,6 +1482,7 @@ function FailureScreen({ onRetryBank, onRestartNew }: { onRetryBank: () => void;
           </button>
         </div>
       </div>
+      <CancelTransactionButton onClick={onCancel} disabled={paymentInitiated} />
     </section>
   );
 }
@@ -1463,15 +1514,16 @@ function SessionExpiredScreen({ onRestart }: { onRestart: () => void }) {
 // ==========================================
 // PENDING
 // ==========================================
-function PendingScreen({ onRestart }: { onRestart: () => void }) {
+function PendingScreen({ onRestart, onCancel, paymentInitiated }: { onRestart: () => void; onCancel: () => void; paymentInitiated?: boolean }) {
   return (
-    <section className="px-3">
+    <section className="px-3 space-y-3">
       <div className="overflow-hidden rounded-xl bg-white px-6 py-10 text-center">
         <Clock3 className="mx-auto h-12 w-12 text-[#b38600] bg-[#fffbf0] rounded-full p-2 mb-4" />
         <h2 className="text-[20px] font-bold">Payment Pending</h2>
         <p className="mt-2 text-[13px] text-[#666]">Your payment is still being processed. We will notify you once it is complete.</p>
         <button onClick={onRestart} className="mt-6 w-full rounded-lg bg-[#f0f0f0] py-3 text-[14px] font-medium text-[#555]">Return to start</button>
       </div>
+      <CancelTransactionButton onClick={onCancel} disabled={paymentInitiated} />
     </section>
   );
 }
@@ -1489,6 +1541,70 @@ function RadioOption({ active, onClick, label }: { active: boolean; onClick: () 
     </button>
   );
 }
+
+// ==========================================
+// CANCEL TRANSACTION BUTTON
+// ==========================================
+function CancelTransactionButton({ onClick, disabled = false }: { onClick: () => void; disabled?: boolean }) {
+  return (
+    <motion.button
+      onClick={onClick}
+      disabled={disabled}
+      whileTap={disabled ? {} : { scale: 0.97 }}
+      className={`w-full py-3 text-[13px] font-semibold rounded-lg transition-colors ${
+        disabled
+          ? 'text-gray-400 cursor-not-allowed bg-gray-50'
+          : 'text-red-600 hover:text-red-700 hover:bg-red-50'
+      }`}
+    >
+      Cancel the Transaction - Return to AirPeace
+    </motion.button>
+  );
+}
+
+// ==========================================
+// CANCEL CONFIRMATION MODAL
+// ==========================================
+function CancelConfirmationModal({ onConfirm, onDismiss }: { onConfirm: () => void; onDismiss: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl"
+      >
+        <div className="mb-4 flex justify-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-100">
+            <AlertTriangle className="h-6 w-6 text-amber-600" />
+          </div>
+        </div>
+        <h3 className="mb-2 text-center text-[18px] font-bold text-[#333]">
+          Cancel Transaction?
+        </h3>
+        <p className="mb-6 text-center text-[13px] text-[#666] leading-relaxed">
+          Are you sure you want to cancel this transaction? You will be redirected back to the AirPeace website.
+        </p>
+        <div className="space-y-2">
+          <motion.button
+            onClick={onConfirm}
+            whileTap={{ scale: 0.97 }}
+            className="w-full rounded-lg bg-red-600 py-3 text-[14px] font-bold text-white hover:bg-red-700"
+          >
+            Yes, Cancel Transaction
+          </motion.button>
+          <motion.button
+            onClick={onDismiss}
+            whileTap={{ scale: 0.97 }}
+            className="w-full rounded-lg border border-[#d5d5d5] bg-white py-3 text-[13px] font-semibold text-[#555] hover:bg-gray-50"
+          >
+            No, Continue Payment
+          </motion.button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 function Panel({ children, className = '' }: any) { return <div className={`rounded-xl bg-white shadow-sm p-4 ${className}`}>{children}</div>; }
 function KV({ label, value, bold = false }: any) { return <div className="flex justify-between py-1"><span className="text-[#666]">{label}</span><span className={`${bold ? 'font-bold' : 'font-semibold'} text-[#333]`}>{value}</span></div>; }
 function DataRow({ label, value }: any) { return <div className="flex justify-between text-[12px] py-1 border-b border-[#eee] last:border-0"><span className="text-[#777]">{label}</span><span className="font-medium text-[#333]">{value}</span></div>; }
