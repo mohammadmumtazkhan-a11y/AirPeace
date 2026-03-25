@@ -43,7 +43,11 @@ type Stage =
   | 'failure'        // Insufficient funds / generic failure
   | 'recognition'    // Recognition check in progress
   | 'pending'
-  | 'expired';       // Screen 8: Session expired
+  | 'expired'        // Screen 8: Session expired
+  | 'plaid'                           // PLAID payment gateway
+  | 'different-account-email'         // Use Different Bank: email lookup
+  | 'different-account-pin'           // Use Different Bank: PIN verification (existing user)
+  | 'different-account-existing-user'; // Use Different Bank: read-only existing user details
 
 type AccountType = 'PERSONAL' | 'COMPANY';
 type ExpectedOutcome = 'SUCCESS' | 'MISMATCH' | 'INSUFFICIENT_FUNDS' | 'PENDING';
@@ -76,6 +80,7 @@ interface DemoScenario {
   accountType: AccountType;
   expectedOutcome: ExpectedOutcome;
   description: string;
+  isNewCustomer?: boolean;
 }
 
 // ---- Mock partner data (supplied by AirPeace / the partner) ----
@@ -108,12 +113,42 @@ const MOCK_COMPANY_DATA = {
 
 const MOCK_MISMATCH_BANK_NAME = 'Jane A. Doe';
 
+// Mock saved bank account cards for payer selection
+const MOCK_BANK_ACCOUNTS = [
+  {
+    id: 'card-1', nameOnAccount: 'John Doe', maskedAccount: '****1234', bankName: 'Barclays',
+    email: 'johndoe@email.com', dob: '15/06/1985',
+    addressLine1: '12 Baker Street', addressLine2: 'Marylebone', city: 'London', postcode: 'NW1 6XE',
+  },
+  {
+    id: 'card-2', nameOnAccount: 'Jane A. Doe', maskedAccount: '****5678', bankName: 'HSBC',
+    email: 'jane.doe@email.com', dob: '22/03/1990',
+    addressLine1: '45 High Street', addressLine2: '', city: 'Manchester', postcode: 'M1 2AB',
+  },
+];
+
+// Mock existing registered users for the "Use Different Bank Account" flow
+const MOCK_EXISTING_USERS: Array<{ email: string; pin: string; payer: PayerDetails }> = [
+  {
+    email: 'existing@example.com',
+    pin: '1234',
+    payer: {
+      firstName: 'Sarah', middleName: '', lastName: 'Connor',
+      email: 'existing@example.com', dob: '10/04/1982', mobile: '+44 7700 900123',
+      addressLine1: '22 Elm Road', addressLine2: 'Notting Hill', city: 'London', postcode: 'W11 2JB',
+      country: 'United Kingdom', companyRegNo: '', companyName: '', companyAddress: '', directorName: '',
+    },
+  },
+];
+
 // Company has no name field → no mismatch scenario
 const DEMO_SCENARIOS: DemoScenario[] = [
-  { id: 'personal-success',     label: 'Personal — Success',         accountType: 'PERSONAL', expectedOutcome: 'SUCCESS',            description: 'Personal account payment. Name matches. Happy path.' },
-  { id: 'personal-mismatch',    label: 'Personal — Name Mismatch',   accountType: 'PERSONAL', expectedOutcome: 'MISMATCH',           description: 'Name on bank account does not match payer profile.' },
-  { id: 'company-success',      label: 'Company — Success',          accountType: 'COMPANY',  expectedOutcome: 'SUCCESS',            description: 'Company account payment. Happy path.' },
-  { id: 'company-insufficient', label: 'Company — Insufficient Funds', accountType: 'COMPANY', expectedOutcome: 'INSUFFICIENT_FUNDS', description: 'Company payment fails due to insufficient balance.' },
+  { id: 'personal-success',             label: 'Personal — Success',                    accountType: 'PERSONAL', expectedOutcome: 'SUCCESS',            description: 'Existing user. Saved bank account selected. Name matches. Happy path.' },
+  { id: 'personal-mismatch',            label: 'Personal — Name Mismatch',              accountType: 'PERSONAL', expectedOutcome: 'MISMATCH',           description: 'Existing user. Name on bank account does not match payer profile.' },
+  { id: 'new-customer-personal-success',  label: 'New Customer — Personal — Success',   accountType: 'PERSONAL', expectedOutcome: 'SUCCESS',            description: 'New/first-time payer. Enters email, fills details. Name matches. Happy path.', isNewCustomer: true },
+  { id: 'new-customer-personal-mismatch', label: 'New Customer — Personal — Name Mismatch', accountType: 'PERSONAL', expectedOutcome: 'MISMATCH',      description: 'New/first-time payer. Enters email, fills details with mismatching name.', isNewCustomer: true },
+  { id: 'company-success',              label: 'Company — Success',                     accountType: 'COMPANY',  expectedOutcome: 'SUCCESS',            description: 'Company account payment. Happy path.' },
+  { id: 'company-insufficient',         label: 'Company — Insufficient Funds',          accountType: 'COMPANY',  expectedOutcome: 'INSUFFICIENT_FUNDS', description: 'Company payment fails due to insufficient balance.' },
 ];
 
 const pageVariants = {
@@ -137,8 +172,8 @@ function getPayerFullName(p: PayerDetails): string {
 // ==========================================
 // STATUS TRACKER
 // ==========================================
-const PAYMENT_STEPS         = ['Verifying Name', 'Payment initiated from your bank', 'We are waiting to receive your funds', 'We have received your funds', 'We are validating that the bank account name matches the payer details provided', 'Payment approved'];
-const PAYMENT_STEPS_MISMATCH = ['Name mismatch — verification failed', 'Payment initiated from your bank', 'We are waiting to receive your funds', 'We have received your funds', 'We are validating that the bank account name matches the payer details provided', 'Name mismatch — funds are being returned'];
+const PAYMENT_STEPS         = ['Payment initiated from your bank', 'We are waiting to receive your funds', 'We have received your funds', 'We are validating that the bank account name matches the payer details provided', 'Payment approved'];
+const PAYMENT_STEPS_MISMATCH = ['Payment initiated from your bank', 'We are waiting to receive your funds', 'We have received your funds', 'We are validating that the bank account name matches the payer details provided', 'Name mismatch — funds are being returned'];
 
 function StatusTracker({ activeStep, isMismatch = false, isComplete = false }: { activeStep: number; isMismatch?: boolean; isComplete?: boolean }) {
   const steps = (isMismatch ? PAYMENT_STEPS_MISMATCH : PAYMENT_STEPS).map((label, idx) => {
@@ -217,9 +252,18 @@ export default function AirPeacePaymentFlow() {
   const [isShowingWarningModal, setIsShowingWarningModal] = useState(false);
 
   const [selectedScenario, setSelectedScenario] = useState<DemoScenario | null>(null);
+  const [isNewCustomer,    setIsNewCustomer]    = useState(false);
 
   const [paymentInitiated, setPaymentInitiated] = useState(false);
   const [showCancelConfirmation, setShowCancelConfirmation] = useState(false);
+
+  // ---- "Use Different Bank Account" sub-flow state ----
+  const [differentAccountEmail, setDifferentAccountEmail] = useState('');
+  const [differentAccountPinInput, setDifferentAccountPinInput] = useState('');
+  const [differentAccountPinError, setDifferentAccountPinError] = useState('');
+  const [isLookingUpEmail, setIsLookingUpEmail] = useState(false);
+  const [existingPayerData, setExistingPayerData] = useState<PayerDetails | null>(null);
+  const [personalFormSource, setPersonalFormSource] = useState<'details' | 'different-account-email'>('details');
 
   const toastIdRef      = useRef(0);
   const companyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -249,6 +293,7 @@ export default function AirPeacePaymentFlow() {
   // ---- Scenario start ----
   const handleStartScenario = useCallback((scenario: DemoScenario) => {
     setSelectedScenario(scenario);
+    setIsNewCustomer(!!scenario.isNewCustomer);
     setExpectedOutcome(scenario.expectedOutcome);
     setAccountType(null);
     setFieldErrors({});
@@ -264,12 +309,19 @@ export default function AirPeacePaymentFlow() {
     setPayer({ ...PARTNER_PAYER }); // pre-populate with partner data
     setPaymentInitiated(false);
     setShowCancelConfirmation(false);
+    setDifferentAccountEmail('');
+    setDifferentAccountPinInput('');
+    setDifferentAccountPinError('');
+    setIsLookingUpEmail(false);
+    setExistingPayerData(null);
+    setPersonalFormSource('details');
     setStage('method');
   }, []);
 
   const handleRestart = useCallback(() => {
     setStage('scenario');
     setSelectedScenario(null);
+    setIsNewCustomer(false);
     setToasts([]);
     setTimer(600);
     setRedirectCountdown(15);
@@ -278,6 +330,12 @@ export default function AirPeacePaymentFlow() {
     setAccountType(null);
     setPaymentInitiated(false);
     setShowCancelConfirmation(false);
+    setDifferentAccountEmail('');
+    setDifferentAccountPinInput('');
+    setDifferentAccountPinError('');
+    setIsLookingUpEmail(false);
+    setExistingPayerData(null);
+    setPersonalFormSource('details');
   }, []);
 
   // ---- Cancel transaction handlers ----
@@ -293,13 +351,64 @@ export default function AirPeacePaymentFlow() {
     setShowCancelConfirmation(false);
   }, []);
 
+  // ---- "Use Different Bank Account" handlers ----
+  const handleDifferentAccountEmailContinue = useCallback(async () => {
+    setIsLookingUpEmail(true);
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    const normalizedEmail = differentAccountEmail.trim().toLowerCase();
+    const foundUser = MOCK_EXISTING_USERS.find(u => u.email.toLowerCase() === normalizedEmail);
+    setIsLookingUpEmail(false);
+    if (foundUser) {
+      setExistingPayerData(foundUser.payer);
+      addToast(`PIN sent to ${differentAccountEmail.trim()}. Valid for 30 minutes.`, 'info');
+      setDifferentAccountPinInput('');
+      setDifferentAccountPinError('');
+      setStage('different-account-pin');
+    } else {
+      addToast('No account found. Please enter your details.', 'info');
+      setPayer(prev => ({
+        ...prev,
+        firstName: '', middleName: '', lastName: '',
+        email: differentAccountEmail.trim(),
+        dob: '', mobile: '', addressLine1: '', addressLine2: '', city: '', postcode: '',
+      }));
+      setFieldErrors({});
+      setPersonalFormSource('different-account-email');
+      setStage('personal-form');
+    }
+  }, [differentAccountEmail, addToast]);
+
+  const handleDifferentAccountPinVerify = useCallback(() => {
+    const normalizedEmail = differentAccountEmail.trim().toLowerCase();
+    const foundUser = MOCK_EXISTING_USERS.find(u => u.email.toLowerCase() === normalizedEmail);
+    if (!foundUser) {
+      setDifferentAccountPinError('Session error. Please go back and try again.');
+      return;
+    }
+    if (differentAccountPinInput.trim() !== foundUser.pin) {
+      setDifferentAccountPinError('Incorrect PIN. Please try again.');
+      return;
+    }
+    setDifferentAccountPinError('');
+    setStage('different-account-existing-user');
+  }, [differentAccountEmail, differentAccountPinInput]);
+
+  const handleDifferentAccountExistingUserContinue = useCallback((updatedData: PayerDetails) => {
+    setPayer({ ...updatedData });
+    setExistingPayerData({ ...updatedData });
+    setAccountType('PERSONAL');
+    setHasAcknowledgedWarning(false);
+    setPrevPaymentStage('different-account-existing-user');
+    setIsShowingWarningModal(true);
+  }, []);
+
   // ---- Summary → Details (account type selector) ----
   const handleAfterSummary = useCallback(() => {
     setAccountType(null);
     setStage('details');
   }, []);
 
-  // ---- Personal selected → restore partner name in case Company was selected first ----
+  // ---- Personal selected → new customers go straight to email entry; existing users stay on details ----
   const handleSelectPersonal = useCallback(() => {
     setAccountType('PERSONAL');
     setFieldErrors({});
@@ -309,7 +418,15 @@ export default function AirPeacePaymentFlow() {
       middleName: prev.middleName || PARTNER_DATA.middleName,
       lastName:   prev.lastName   || PARTNER_DATA.lastName,
     }));
-  }, []);
+    if (isNewCustomer) {
+      setDifferentAccountEmail('');
+      setDifferentAccountPinInput('');
+      setDifferentAccountPinError('');
+      setExistingPayerData(null);
+      setPersonalFormSource('different-account-email');
+      setStage('different-account-email');
+    }
+  }, [isNewCustomer]);
 
   // ---- Company selected → company form ----
   const handleSelectCompany = useCallback(() => {
@@ -470,11 +587,16 @@ export default function AirPeacePaymentFlow() {
         <AnimatePresence>
           {showWarningModal && (
             <ImportantInformationModal
+              payerName={getPayerFullName(payer)}
               onConfirm={() => { setHasAcknowledgedWarning(true); setIsShowingWarningModal(false); handleConfirmAndPay(true); }}
               onBack={() => {
                 setIsShowingWarningModal(false);
                 setFieldErrors({});
-                setStage('personal-form');
+                if (prevPaymentStage === 'different-account-existing-user') {
+                  setStage('different-account-existing-user');
+                } else {
+                  setStage('personal-form');
+                }
               }}
             />
           )}
@@ -533,20 +655,17 @@ export default function AirPeacePaymentFlow() {
                 onSelectCompany={handleSelectCompany}
                 onConfirmPersonal={() => {
                   const errors: FieldErrors = {};
-                  if (!payer.dob?.trim()) errors.dob = 'Date of birth is required';
+                  if (!payer.firstName?.trim()) errors.firstName = 'First name is required';
+                  if (!payer.lastName?.trim())  errors.lastName  = 'Last name is required';
+                  if (!payer.dob?.trim())        errors.dob       = 'Date of birth is required';
                   if (!payer.addressLine1?.trim()) errors.addressLine1 = 'Address Line 1 is required';
-                  if (!payer.city?.trim()) errors.city = 'City is required';
-                  if (!payer.postcode?.trim()) errors.postcode = 'Postcode is required';
+                  if (!payer.city?.trim())       errors.city      = 'City is required';
+                  if (!payer.postcode?.trim())   errors.postcode  = 'Postcode is required';
 
                   if (Object.keys(errors).length > 0) {
                     setFieldErrors(errors);
                     addToast('Please fill in all required fields.');
                     return;
-                  }
-
-                  // Ensure partner name is always set before payment (guards against edge case where names were cleared)
-                  if (!payer.firstName.trim() && !payer.lastName.trim()) {
-                    setPayer(prev => ({ ...prev, firstName: PARTNER_DATA.firstName, middleName: PARTNER_DATA.middleName, lastName: PARTNER_DATA.lastName }));
                   }
                   handleConfirmAndPay();
                 }}
@@ -559,13 +678,17 @@ export default function AirPeacePaymentFlow() {
                 onCompanyRegChange={handleCompanyRegChange}
                 onDirectorSelect={handleDirectorSelect}
                 onUseDifferent={() => {
-                  setPayer(prev => ({ ...prev, firstName: '', middleName: '', lastName: '' }));
+                  setDifferentAccountEmail('');
+                  setDifferentAccountPinInput('');
+                  setDifferentAccountPinError('');
+                  setExistingPayerData(null);
                   setFieldErrors({});
-                  setStage('personal-form');
+                  setStage('different-account-email');
                 }}
                 onBack={() => setStage('summary')}
                 onCancel={handleCancelClick}
                 paymentInitiated={paymentInitiated}
+                isMismatchScenario={expectedOutcome === 'MISMATCH'}
               />
             </motion.div>
           )}
@@ -581,10 +704,14 @@ export default function AirPeacePaymentFlow() {
                 onFieldChange={handleFieldChange}
                 onContinue={handlePersonalFormSubmit}
                 onBack={() => {
-                  // Restore partner data names when returning to the pre-filled details screen
-                  setPayer(prev => ({ ...prev, firstName: PARTNER_DATA.firstName, middleName: PARTNER_DATA.middleName, lastName: PARTNER_DATA.lastName }));
-                  setAccountType(null);
-                  setStage('details');
+                  if (personalFormSource === 'different-account-email') {
+                    setStage('different-account-email');
+                  } else {
+                    // Restore partner data names when returning to the pre-filled details screen
+                    setPayer(prev => ({ ...prev, firstName: PARTNER_DATA.firstName, middleName: PARTNER_DATA.middleName, lastName: PARTNER_DATA.lastName }));
+                    setAccountType(null);
+                    setStage('details');
+                  }
                 }}
                 onCancel={handleCancelClick}
                 paymentInitiated={paymentInitiated}
@@ -593,6 +720,53 @@ export default function AirPeacePaymentFlow() {
           )}
 
 
+
+          {/* Use Different Bank — Step 1: Email entry */}
+          {stage === 'different-account-email' && (
+            <motion.div key="different-account-email" {...pageVariants} className="flex-1">
+              <DifferentAccountEmailScreen
+                email={differentAccountEmail}
+                isLoading={isLookingUpEmail}
+                onEmailChange={setDifferentAccountEmail}
+                onContinue={handleDifferentAccountEmailContinue}
+                onBack={() => { setDifferentAccountEmail(''); setStage('details'); }}
+                onCancel={handleCancelClick}
+                paymentInitiated={paymentInitiated}
+                isMismatchScenario={expectedOutcome === 'MISMATCH'}
+              />
+            </motion.div>
+          )}
+
+          {/* Use Different Bank — Step 2: PIN verification */}
+          {stage === 'different-account-pin' && (
+            <motion.div key="different-account-pin" {...pageVariants} className="flex-1">
+              <DifferentAccountPinScreen
+                email={differentAccountEmail}
+                pinInput={differentAccountPinInput}
+                pinError={differentAccountPinError}
+                onPinChange={val => { setDifferentAccountPinInput(val); setDifferentAccountPinError(''); }}
+                onVerify={handleDifferentAccountPinVerify}
+                onResend={() => addToast(`PIN resent to ${differentAccountEmail.trim()}. Valid for 30 minutes.`, 'info')}
+                onBack={() => { setDifferentAccountPinInput(''); setDifferentAccountPinError(''); setStage('different-account-email'); }}
+                onCancel={handleCancelClick}
+                paymentInitiated={paymentInitiated}
+              />
+            </motion.div>
+          )}
+
+          {/* Use Different Bank — Step 3: Existing user details (read-only for existing, editable for new customer) */}
+          {stage === 'different-account-existing-user' && existingPayerData && (
+            <motion.div key="different-account-existing-user" {...pageVariants} className="flex-1">
+              <DifferentAccountExistingUserScreen
+                payerData={existingPayerData}
+                isNewCustomer={isNewCustomer}
+                onContinue={handleDifferentAccountExistingUserContinue}
+                onBack={() => { setDifferentAccountPinInput(''); setDifferentAccountPinError(''); setStage('different-account-pin'); }}
+                onCancel={handleCancelClick}
+                paymentInitiated={paymentInitiated}
+              />
+            </motion.div>
+          )}
 
           {/* Screen 3: Review */}
           {stage === 'review' && (
@@ -636,6 +810,13 @@ export default function AirPeacePaymentFlow() {
             </motion.div>
           )}
 
+          {/* PLAID Payment Gateway */}
+          {stage === 'plaid' && (
+            <motion.div key="plaid" {...pageVariants} className="flex-1">
+              <PlaidScreen onBack={() => setStage('mismatch')} onCancel={handleCancelClick} paymentInitiated={paymentInitiated} />
+            </motion.div>
+          )}
+
           {/* Screen 7B: Name Mismatch (Personal only) */}
           {stage === 'mismatch' && (
             <motion.div key="mismatch" {...pageVariants}>
@@ -647,9 +828,10 @@ export default function AirPeacePaymentFlow() {
                 onCorrectDetails={() => {
                   setHasAcknowledgedWarning(false);
                   setPayer(prev => ({ ...prev, firstName: '', middleName: '', lastName: '' }));
+                  setPersonalFormSource('details');
                   setStage('personal-form');
                 }}
-                onRefunding={() => setStage('refunding')}
+                onRefunding={() => setStage('plaid')}
                 onCancel={handleCancelClick}
                 paymentInitiated={paymentInitiated}
               />
@@ -711,6 +893,11 @@ export default function AirPeacePaymentFlow() {
 // SCENARIO SELECTOR
 // ==========================================
 function ScenarioSelector({ scenarios, onSelect }: { scenarios: DemoScenario[]; onSelect: (s: DemoScenario) => void }) {
+  const groups = [
+    { key: 'existing', label: 'Existing Customer — Personal', color: '#ff4c16', dot: 'bg-[#ff4c16]', items: scenarios.filter(s => s.accountType === 'PERSONAL' && !s.isNewCustomer) },
+    { key: 'new',      label: 'New Customer — Personal',      color: '#2a9e6e', dot: 'bg-[#2a9e6e]', items: scenarios.filter(s => s.accountType === 'PERSONAL' && s.isNewCustomer) },
+    { key: 'company',  label: 'Company',                      color: '#2a5f9e', dot: 'bg-[#2a5f9e]', items: scenarios.filter(s => s.accountType === 'COMPANY') },
+  ];
   return (
     <div className="mx-auto max-w-[600px] px-4 py-8">
       <div className="text-center">
@@ -719,13 +906,23 @@ function ScenarioSelector({ scenarios, onSelect }: { scenarios: DemoScenario[]; 
         <h1 className="mt-6 text-[22px] font-bold text-white">Mito.Money Payment Pages Flow</h1>
         <p className="mt-1 text-[12px] text-white/50">Select a scenario to preview the payment journey</p>
       </div>
-      <div className="mt-8 grid gap-2">
-        {scenarios.map(s => (
-          <motion.button key={s.id} onClick={() => onSelect(s)} whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}
-            className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-left">
-            <p className="text-[13px] font-semibold text-white">{s.label}</p>
-            <p className="mt-0.5 text-[11px] text-white/50">{s.description}</p>
-          </motion.button>
+      <div className="mt-8 space-y-5">
+        {groups.map(group => (
+          <div key={group.key}>
+            <div className="flex items-center gap-2 mb-2 px-1">
+              <div className={`h-2 w-2 rounded-full flex-shrink-0 ${group.dot}`} />
+              <p className="text-[11px] font-bold tracking-wide text-white/60 uppercase">{group.label}</p>
+            </div>
+            <div className="grid gap-2">
+              {group.items.map(s => (
+                <motion.button key={s.id} onClick={() => onSelect(s)} whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}
+                  className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-left hover:bg-white/10 transition-colors">
+                  <p className="text-[13px] font-semibold text-white">{s.label}</p>
+                  <p className="mt-0.5 text-[11px] text-white/50">{s.description}</p>
+                </motion.button>
+              ))}
+            </div>
+          </div>
         ))}
       </div>
     </div>
@@ -813,7 +1010,8 @@ function SummaryScreen({ timer, onContinue, onCancel, paymentInitiated = false }
 function DetailsScreen({
   accountType, payer, onSelectPersonal, onSelectCompany, onConfirmPersonal, onConfirmCompany,
   onUseDifferent, onBack, companyLoading, companyLoaded, directorLoading, directorLoaded,
-  onFieldChange, onCompanyRegChange, onDirectorSelect, fieldErrors = {}, onCancel, paymentInitiated
+  onFieldChange, onCompanyRegChange, onDirectorSelect, fieldErrors = {}, onCancel, paymentInitiated,
+  isMismatchScenario,
 }: {
   accountType: AccountType | null;
   payer: PayerDetails;
@@ -833,7 +1031,10 @@ function DetailsScreen({
   fieldErrors?: FieldErrors;
   onCancel: () => void;
   paymentInitiated?: boolean;
+  isMismatchScenario?: boolean;
 }) {
+  const [selectedBankCard, setSelectedBankCard] = useState<string | null>(null);
+  const [bankCardError, setBankCardError] = useState('');
   const canContinueCompany = companyLoaded && directorLoaded;
   return (
     <section className="flex flex-col px-3 pb-4 space-y-3">
@@ -853,81 +1054,240 @@ function DetailsScreen({
       <AnimatePresence mode="wait">
         {accountType === 'PERSONAL' && (
           <motion.div key="personal" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="mt-4 space-y-4 overflow-hidden">
-            {/* Payer details + warning card */}
+
+            {/* Passenger Information — read-only */}
             <div className="overflow-hidden rounded-xl bg-white px-4 py-4 shadow-sm border border-[#e0e0e0]">
-              <h3 className="text-[14px] font-bold text-[#3a3a3a] mb-3">Payer Information</h3>
-              <div className="bg-[#f8f8f8] px-3 py-2.5 rounded-lg mb-4">
-                <DataRow label="Payer Name" value={getPayerFullName(payer)} />
-                <DataRow label="Email"      value={payer.email} />
+              <h3 className="text-[14px] font-bold text-[#3a3a3a] mb-3">Passenger Information</h3>
+              <div className="bg-[#f8f8f8] px-3 py-2.5 rounded-lg">
+                <DataRow label="Passenger Name" value={`${PARTNER_DATA.firstName} ${PARTNER_DATA.middleName ? PARTNER_DATA.middleName + ' ' : ''}${PARTNER_DATA.lastName}`} />
+                <DataRow label="Email" value={PARTNER_DATA.email} />
+              </div>
+            </div>
+
+            {/* Payer Bank Account Details */}
+            <div className="overflow-hidden rounded-xl bg-white px-4 py-4 shadow-sm border border-[#e0e0e0]">
+
+              {/* Payer ≠ passenger notice */}
+              <div className="mb-4 flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 text-[12px] text-blue-800">
+                <Info size={14} className="mt-0.5 flex-shrink-0" />
+                <p>The person or company making the payment may or may not be the passenger. Please ensure you provide the correct payer details — incorrect information may result in the payment being rejected.</p>
               </div>
 
-              <div className="space-y-4 mb-4">
-                <div className="bg-[#f4f4f4] p-3 rounded-lg border border-[#e5e5e5]">
-                  <label className="text-[11px] text-[#717171] font-bold">Date of Birth</label>
-                  <input
-                    value={payer.dob}
-                    onChange={e => onFieldChange?.('dob', e.target.value)}
-                    placeholder="DD/MM/YYYY"
-                    className={`mt-1 w-full rounded border px-3 py-2.5 text-[12px] bg-white ${fieldErrors?.dob ? 'border-red-400' : 'border-[#d5d5d5]'}`}
-                  />
-                  {fieldErrors?.dob && <p className="mt-1 text-[11px] text-red-500">{fieldErrors.dob}</p>}
-                </div>
+              <h3 className="text-[14px] font-bold text-[#3a3a3a] mb-1">Bank Account Details</h3>
+              <p className="text-[11px] text-[#888] mb-3">Select the bank account being used for this payment</p>
 
-                <div className="bg-[#f4f4f4] p-3 rounded-lg border border-[#e5e5e5]">
-                  <label className="text-[11px] text-[#717171] font-bold mb-2 block">Address</label>
-                  <div className="space-y-2">
-                    <div>
-                      <input
-                        value={payer.addressLine1}
-                        onChange={e => onFieldChange?.('addressLine1', e.target.value)}
-                        placeholder="Address Line 1"
-                        className={`w-full rounded border px-3 py-2.5 text-[12px] bg-white ${fieldErrors?.addressLine1 ? 'border-red-400' : 'border-[#d5d5d5]'}`}
-                      />
-                      {fieldErrors?.addressLine1 && <p className="mt-1 text-[11px] text-red-500">{fieldErrors.addressLine1}</p>}
+              {/* Saved bank account cards */}
+<div className="space-y-2">
+                {MOCK_BANK_ACCOUNTS.map(account => (
+                  <button
+                    key={account.id}
+                    type="button"
+                    disabled={isMismatchScenario}
+                    onClick={() => {
+                      if (isMismatchScenario) return;
+                      setSelectedBankCard(account.id);
+                      setBankCardError('');
+                      const parts = account.nameOnAccount.trim().split(' ');
+                      onFieldChange?.('firstName', parts[0] || '');
+                      onFieldChange?.('lastName', parts.slice(1).join(' ') || '');
+                      onFieldChange?.('email', account.email);
+                      onFieldChange?.('dob', account.dob);
+                      onFieldChange?.('addressLine1', account.addressLine1);
+                      onFieldChange?.('addressLine2', account.addressLine2);
+                      onFieldChange?.('city', account.city);
+                      onFieldChange?.('postcode', account.postcode);
+                    }}
+                    className={`w-full text-left rounded-lg border-2 px-4 py-3 transition-all ${
+                      isMismatchScenario
+                        ? 'border-[#e8e8e8] bg-[#f4f4f4] opacity-50 cursor-not-allowed'
+                        : selectedBankCard === account.id
+                          ? 'border-[#ff4c16] bg-[#fff8f6]'
+                          : 'border-[#e8e8e8] bg-[#fafafa] hover:border-[#ccc]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-[13px] font-semibold text-[#3a3a3a]">{account.nameOnAccount}</p>
+                        <p className="text-[11px] text-[#888]">{account.bankName} · {account.maskedAccount}</p>
+                      </div>
+                      <div className={`h-4 w-4 flex-shrink-0 rounded-full border-2 flex items-center justify-center ${
+                        selectedBankCard === account.id && !isMismatchScenario ? 'border-[#ff4c16]' : 'border-[#ccc]'
+                      }`}>
+                        {selectedBankCard === account.id && !isMismatchScenario && <div className="h-2 w-2 rounded-full bg-[#ff4c16]" />}
+                      </div>
                     </div>
-                    <input
-                      value={payer.addressLine2}
-                      onChange={e => onFieldChange?.('addressLine2', e.target.value)}
-                      placeholder="Address Line 2 (Optional)"
-                      className="w-full rounded border border-[#d5d5d5] px-3 py-2.5 text-[12px] bg-white"
-                    />
-                    <div className="flex gap-2">
-                      <div className="flex-1">
-                        <input
-                          value={payer.city}
-                          onChange={e => onFieldChange?.('city', e.target.value)}
-                          placeholder="City"
-                          className={`w-full rounded border px-3 py-2.5 text-[12px] bg-white ${fieldErrors?.city ? 'border-red-400' : 'border-[#d5d5d5]'}`}
-                        />
-                        {fieldErrors?.city && <p className="mt-1 text-[11px] text-red-500">{fieldErrors.city}</p>}
-                      </div>
-                      <div className="w-[40%]">
-                        <input
-                          value={payer.postcode}
-                          onChange={e => onFieldChange?.('postcode', e.target.value)}
-                          placeholder="Post Code"
-                          className={`w-full rounded border px-3 py-2.5 text-[12px] bg-white ${fieldErrors?.postcode ? 'border-red-400' : 'border-[#d5d5d5]'}`}
-                        />
-                        {fieldErrors?.postcode && <p className="mt-1 text-[11px] text-red-500">{fieldErrors.postcode}</p>}
-                      </div>
+                  </button>
+                ))}
+
+                {/* Use different / add new */}
+                <button
+                  type="button"
+                  onClick={() => onUseDifferent()}
+                  className={`w-full text-left rounded-lg border-2 px-4 py-3 transition-all ${
+                    selectedBankCard === 'new'
+                      ? 'border-[#ff4c16] bg-[#fff8f6]'
+                      : 'border-dashed border-[#d0d0d0] bg-white hover:border-[#aaa]'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[#f0f0f0]">
+                      <span className="text-[18px] font-light leading-none text-[#666]">+</span>
+                    </div>
+                    <div>
+                      <p className="text-[13px] font-semibold text-[#555]">Use different bank account</p>
+                      <p className="text-[11px] text-[#aaa]">Enter new payer details manually</p>
+                    </div>
+                    <div className={`ml-auto h-4 w-4 flex-shrink-0 rounded-full border-2 flex items-center justify-center ${
+                      selectedBankCard === 'new' ? 'border-[#ff4c16]' : 'border-[#ccc]'
+                    }`}>
+                      {selectedBankCard === 'new' && <div className="h-2 w-2 rounded-full bg-[#ff4c16]" />}
                     </div>
                   </div>
-                </div>
+                </button>
               </div>
 
-              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800 flex items-start gap-2">
+              {bankCardError && <p className="mt-2 text-[11px] font-medium text-red-500">{bankCardError}</p>}
+
+              {/* Payer details form — shown once a card is selected */}
+              <AnimatePresence>
+                {selectedBankCard && (
+                  <motion.div
+                    key="payer-form"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="mt-4 space-y-3 border-t border-[#eee] pt-4">
+                      {selectedBankCard !== 'new' && selectedBankCard && (
+                        <div className="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-[11px] text-blue-800">
+                          <Info size={13} className="flex-shrink-0" />
+                          <span>Details from your saved account are read-only.</span>
+                        </div>
+                      )}
+
+                      {/* Name on Bank Account */}
+                      <div className="bg-[#f4f4f4] p-3 rounded-lg border border-[#e5e5e5]">
+                        <label className="text-[11px] text-[#717171] font-bold block mb-1.5">Name on Bank Account</label>
+                        <div className="flex gap-2">
+                          <div className="flex-1">
+                            <input
+                              value={payer.firstName}
+                              readOnly={selectedBankCard !== 'new'}
+                              onChange={e => selectedBankCard === 'new' && onFieldChange?.('firstName', e.target.value)}
+                              placeholder="First Name"
+                              className={`w-full rounded border px-3 py-2.5 text-[12px] ${selectedBankCard !== 'new' ? 'bg-[#efefef] text-[#666] cursor-default' : 'bg-white'} ${fieldErrors?.firstName ? 'border-red-400' : 'border-[#d5d5d5]'}`}
+                            />
+                            {fieldErrors?.firstName && <p className="mt-1 text-[11px] text-red-500">{fieldErrors.firstName}</p>}
+                          </div>
+                          <div className="flex-1">
+                            <input
+                              value={payer.lastName}
+                              readOnly={selectedBankCard !== 'new'}
+                              onChange={e => selectedBankCard === 'new' && onFieldChange?.('lastName', e.target.value)}
+                              placeholder="Last Name"
+                              className={`w-full rounded border px-3 py-2.5 text-[12px] ${selectedBankCard !== 'new' ? 'bg-[#efefef] text-[#666] cursor-default' : 'bg-white'} ${fieldErrors?.lastName ? 'border-red-400' : 'border-[#d5d5d5]'}`}
+                            />
+                            {fieldErrors?.lastName && <p className="mt-1 text-[11px] text-red-500">{fieldErrors.lastName}</p>}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Email of person paying */}
+                      <div className="bg-[#f4f4f4] p-3 rounded-lg border border-[#e5e5e5]">
+                        <label className="text-[11px] text-[#717171] font-bold block mb-1">Email of Person Paying</label>
+                        <input
+                          value={payer.email}
+                          readOnly={selectedBankCard !== 'new'}
+                          onChange={e => selectedBankCard === 'new' && onFieldChange?.('email', e.target.value)}
+                          placeholder="email@example.com"
+                          type="email"
+                          className={`w-full rounded border border-[#d5d5d5] px-3 py-2.5 text-[12px] ${selectedBankCard !== 'new' ? 'bg-[#efefef] text-[#666] cursor-default' : 'bg-white'}`}
+                        />
+                      </div>
+
+                      {/* Date of Birth */}
+                      <div className="bg-[#f4f4f4] p-3 rounded-lg border border-[#e5e5e5]">
+                        <label className="text-[11px] text-[#717171] font-bold block mb-1">Date of Birth</label>
+                        <input
+                          value={payer.dob}
+                          readOnly={selectedBankCard !== 'new'}
+                          onChange={e => selectedBankCard === 'new' && onFieldChange?.('dob', e.target.value)}
+                          placeholder="DD/MM/YYYY"
+                          className={`w-full rounded border px-3 py-2.5 text-[12px] ${selectedBankCard !== 'new' ? 'bg-[#efefef] text-[#666] cursor-default' : 'bg-white'} ${fieldErrors?.dob ? 'border-red-400' : 'border-[#d5d5d5]'}`}
+                        />
+                        {fieldErrors?.dob && <p className="mt-1 text-[11px] text-red-500">{fieldErrors.dob}</p>}
+                      </div>
+
+                      {/* Address */}
+                      <div className="bg-[#f4f4f4] p-3 rounded-lg border border-[#e5e5e5]">
+                        <label className="text-[11px] text-[#717171] font-bold mb-2 block">Address</label>
+                        <div className="space-y-2">
+                          <div>
+                            <input
+                              value={payer.addressLine1}
+                              readOnly={selectedBankCard !== 'new'}
+                              onChange={e => selectedBankCard === 'new' && onFieldChange?.('addressLine1', e.target.value)}
+                              placeholder="Address Line 1"
+                              className={`w-full rounded border px-3 py-2.5 text-[12px] ${selectedBankCard !== 'new' ? 'bg-[#efefef] text-[#666] cursor-default' : 'bg-white'} ${fieldErrors?.addressLine1 ? 'border-red-400' : 'border-[#d5d5d5]'}`}
+                            />
+                            {fieldErrors?.addressLine1 && <p className="mt-1 text-[11px] text-red-500">{fieldErrors.addressLine1}</p>}
+                          </div>
+                          <input
+                            value={payer.addressLine2}
+                            readOnly={selectedBankCard !== 'new'}
+                            onChange={e => selectedBankCard === 'new' && onFieldChange?.('addressLine2', e.target.value)}
+                            placeholder="Address Line 2 (Optional)"
+                            className={`w-full rounded border border-[#d5d5d5] px-3 py-2.5 text-[12px] ${selectedBankCard !== 'new' ? 'bg-[#efefef] text-[#666] cursor-default' : 'bg-white'}`}
+                          />
+                          <div className="flex gap-2">
+                            <div className="flex-1">
+                              <input
+                                value={payer.city}
+                                readOnly={selectedBankCard !== 'new'}
+                                onChange={e => selectedBankCard === 'new' && onFieldChange?.('city', e.target.value)}
+                                placeholder="City"
+                                className={`w-full rounded border px-3 py-2.5 text-[12px] ${selectedBankCard !== 'new' ? 'bg-[#efefef] text-[#666] cursor-default' : 'bg-white'} ${fieldErrors?.city ? 'border-red-400' : 'border-[#d5d5d5]'}`}
+                              />
+                              {fieldErrors?.city && <p className="mt-1 text-[11px] text-red-500">{fieldErrors.city}</p>}
+                            </div>
+                            <div className="w-[40%]">
+                              <input
+                                value={payer.postcode}
+                                readOnly={selectedBankCard !== 'new'}
+                                onChange={e => selectedBankCard === 'new' && onFieldChange?.('postcode', e.target.value)}
+                                placeholder="Post Code"
+                                className={`w-full rounded border px-3 py-2.5 text-[12px] ${selectedBankCard !== 'new' ? 'bg-[#efefef] text-[#666] cursor-default' : 'bg-white'} ${fieldErrors?.postcode ? 'border-red-400' : 'border-[#d5d5d5]'}`}
+                              />
+                              {fieldErrors?.postcode && <p className="mt-1 text-[11px] text-red-500">{fieldErrors.postcode}</p>}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Amber warning */}
+              <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800 flex items-start gap-2">
                 <AlertCircle size={14} className="mt-0.5 flex-shrink-0 text-amber-500" />
                 <span>The bank account used for payment must be in the payer's name. Mismatches will cause verification to fail and funds to be returned.</span>
               </div>
             </div>
 
             <div className="space-y-3">
-              <motion.button onClick={onConfirmPersonal} whileTap={{ scale: 0.98 }} className="w-full rounded-lg bg-[#ff4c16] py-3.5 text-[18px] font-bold text-white shadow-md">
+              <motion.button
+                onClick={() => {
+                  if (!selectedBankCard) { setBankCardError('Please select a bank account to continue'); return; }
+                  onConfirmPersonal();
+                }}
+                whileTap={{ scale: 0.98 }}
+                className="w-full rounded-lg bg-[#ff4c16] py-3.5 text-[18px] font-bold text-white shadow-md"
+              >
                 Confirm and continue
               </motion.button>
-              <button onClick={onUseDifferent} className="w-full rounded-lg bg-white border border-[#ddd] py-3.5 text-[16px] font-semibold text-[#555] shadow-sm">
-                Use different details
-              </button>
             </div>
           </motion.div>
         )}
@@ -1022,11 +1382,46 @@ function DetailsScreen({
 function PersonalFormScreen({ payer, fieldErrors, onFieldChange, onContinue, onBack, onCancel, paymentInitiated }: {
   payer: PayerDetails; fieldErrors: FieldErrors; onFieldChange: (f: keyof PayerDetails, v: string) => void; onContinue: () => void; onBack: () => void; onCancel: () => void; paymentInitiated?: boolean;
 }) {
-  const [isEditingEmail, setIsEditingEmail] = useState(false);
+  const [usePassengerInfo, setUsePassengerInfo] = useState(false);
   const canContinue = payer.firstName.trim().length > 0 && payer.lastName.trim().length > 0 && payer.email.trim().length > 0;
+
+  const handleUsePassengerToggle = (checked: boolean) => {
+    setUsePassengerInfo(checked);
+    if (checked) {
+      onFieldChange('firstName', PARTNER_DATA.firstName);
+      onFieldChange('middleName', PARTNER_DATA.middleName);
+      onFieldChange('lastName', PARTNER_DATA.lastName);
+      onFieldChange('email', PARTNER_DATA.email);
+    } else {
+      onFieldChange('firstName', '');
+      onFieldChange('middleName', '');
+      onFieldChange('lastName', '');
+      onFieldChange('email', '');
+    }
+  };
+
   return (
     <section className="flex flex-col px-3 pb-4 space-y-3">
       <button onClick={onBack} className="mb-2 flex items-center gap-1 text-[12px] text-[#777]"><ArrowLeft size={14} /> Back</button>
+
+      {/* Passenger Information */}
+      <div className="overflow-hidden rounded-xl bg-white px-4 py-4 shadow-sm border border-[#e0e0e0]">
+        <h3 className="text-[14px] font-bold text-[#3a3a3a] mb-3">Passenger Information</h3>
+        <div className="bg-[#f8f8f8] px-3 py-2.5 rounded-lg">
+          <DataRow label="Passenger Name" value={`${PARTNER_DATA.firstName}${PARTNER_DATA.middleName ? ' ' + PARTNER_DATA.middleName : ''} ${PARTNER_DATA.lastName}`} />
+          <DataRow label="Email" value={PARTNER_DATA.email} />
+        </div>
+        <label className="mt-3 flex cursor-pointer items-center gap-3 rounded-lg border border-[#e0e0e0] bg-[#f8f8f8] px-3 py-2.5">
+          <input
+            type="checkbox"
+            checked={usePassengerInfo}
+            onChange={e => handleUsePassengerToggle(e.target.checked)}
+            className="h-4 w-4 shrink-0 rounded border-gray-300 accent-[#ff4c16]"
+          />
+          <span className="text-[12px] font-semibold text-[#3a3a3a]">Use passenger info as payer details</span>
+        </label>
+      </div>
+
       <Panel>
         <h3 className="text-[14px] font-semibold text-[#3a3a3a] mb-3">Payer Information</h3>
 
@@ -1054,17 +1449,12 @@ function PersonalFormScreen({ payer, fieldErrors, onFieldChange, onContinue, onB
 
         {/* Email Address */}
         <div className="bg-[#f8f8f8] p-3 rounded-lg border border-[#e5e5e5] mb-3">
-          <div className="flex justify-between items-center mb-1">
-            <label className="text-[11px] text-[#717171] font-semibold">Email Address</label>
-            {!isEditingEmail && (
-              <button type="button" onClick={() => setIsEditingEmail(true)} className="text-[11px] font-semibold text-[#2a5f9e] underline">Edit email</button>
-            )}
-          </div>
-          <input 
-            value={payer.email} 
-            disabled={!isEditingEmail}
-            onChange={e => onFieldChange('email', e.target.value)} 
-            className={`w-full rounded px-3 py-2 text-[12px] border ${isEditingEmail ? (fieldErrors.email ? 'bg-white border-red-400 text-[#333]' : 'bg-white border-[#d5d5d5] text-[#333]') : 'bg-[#efefef] border-[#d5d5d5] text-[#888] cursor-not-allowed'}`} 
+          <label className="text-[11px] text-[#717171] font-semibold block mb-1">Email Address</label>
+          <input
+            value={payer.email}
+            onChange={e => onFieldChange('email', e.target.value)}
+            placeholder="email@example.com"
+            className={`w-full rounded px-3 py-2 text-[12px] border bg-white text-[#333] ${fieldErrors.email ? 'border-red-400' : 'border-[#d5d5d5]'}`}
           />
           {fieldErrors.email && <p className="mt-1 text-[11px] text-red-500">{fieldErrors.email}</p>}
         </div>
@@ -1118,6 +1508,267 @@ function PersonalFormScreen({ payer, fieldErrors, onFieldChange, onContinue, onB
 
 
 // ==========================================
+// USE DIFFERENT BANK — STEP 1: EMAIL LOOKUP
+// ==========================================
+function DifferentAccountEmailScreen({
+  email, isLoading, onEmailChange, onContinue, onBack, onCancel, paymentInitiated, isMismatchScenario,
+}: {
+  email: string; isLoading: boolean; onEmailChange: (val: string) => void;
+  onContinue: () => void; onBack: () => void; onCancel: () => void; paymentInitiated?: boolean; isMismatchScenario?: boolean;
+}) {
+  const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const canContinue = isValidEmail && !isLoading;
+  return (
+    <section className="flex flex-col px-3 pb-4 space-y-3">
+      <button onClick={onBack} className="mb-2 flex items-center gap-1 text-[12px] text-[#777]">
+        <ArrowLeft size={14} /> Back
+      </button>
+      <Panel>
+        <h3 className="text-[15px] font-bold text-[#3a3a3a] mb-1">Use Different Bank Account</h3>
+        <p className="text-[12px] text-[#777] mb-4">
+          Enter the email address of the person making this payment to look up their account.
+        </p>
+        <div className="bg-[#f8f8f8] p-3 rounded-lg border border-[#e5e5e5]">
+          <label className="text-[11px] text-[#717171] font-semibold block mb-1">
+            Email of Person Paying
+          </label>
+          <input
+            type="email"
+            value={email}
+            onChange={e => onEmailChange(e.target.value)}
+            placeholder="email@example.com"
+            disabled={isLoading}
+            className="w-full rounded border border-[#d5d5d5] bg-white px-3 py-2.5 text-[12px] disabled:bg-[#efefef] disabled:text-[#888]"
+          />
+        </div>
+        {isMismatchScenario ? (
+          <div className="mt-3 rounded-lg border border-[#d0e8ff] bg-[#f0f7ff] px-3 py-2 flex items-start gap-2">
+            <Info size={13} className="mt-0.5 flex-shrink-0 text-[#2a5f9e]" />
+            <p className="text-[11px] text-[#2a5f9e]">
+              <span className="font-semibold">Demo tip:</span> Use{' '}
+              <button
+                type="button"
+                onClick={() => onEmailChange('newpayer@example.com')}
+                className="font-bold underline hover:text-[#1a4f8e]"
+              >
+                newpayer@example.com
+              </button>{' '}
+              to simulate a new payer — you will be asked to enter their details manually.
+            </p>
+          </div>
+        ) : (
+          <div className="mt-3 rounded-lg border border-[#d0e8ff] bg-[#f0f7ff] px-3 py-2 flex items-start gap-2">
+            <Info size={13} className="mt-0.5 flex-shrink-0 text-[#2a5f9e]" />
+            <p className="text-[11px] text-[#2a5f9e]">
+              <span className="font-semibold">Demo tip:</span> Use{' '}
+              <button
+                type="button"
+                onClick={() => onEmailChange('existing@example.com')}
+                className="font-bold underline hover:text-[#1a4f8e]"
+              >
+                existing@example.com
+              </button>{' '}
+              to try the registered user flow (PIN: <span className="font-bold">1234</span>).
+            </p>
+          </div>
+        )}
+      </Panel>
+      <motion.button
+        disabled={!canContinue}
+        onClick={onContinue}
+        whileTap={canContinue ? { scale: 0.98 } : {}}
+        className={`w-full rounded-lg py-3.5 text-[18px] font-bold text-white shadow-md transition-all flex items-center justify-center gap-2 ${canContinue ? 'bg-[#ff4c16]' : 'bg-[#f4a18e] cursor-not-allowed'}`}
+      >
+        {isLoading ? (<><Loader2 size={18} className="animate-spin" /> Looking up...</>) : 'Continue'}
+      </motion.button>
+      <CancelTransactionButton onClick={onCancel} disabled={paymentInitiated} />
+    </section>
+  );
+}
+
+// ==========================================
+// USE DIFFERENT BANK — STEP 2: PIN VERIFICATION
+// ==========================================
+function DifferentAccountPinScreen({
+  email, pinInput, pinError, onPinChange, onVerify, onResend, onBack, onCancel, paymentInitiated,
+}: {
+  email: string; pinInput: string; pinError: string;
+  onPinChange: (val: string) => void; onVerify: () => void; onResend: () => void;
+  onBack: () => void; onCancel: () => void; paymentInitiated?: boolean;
+}) {
+  const canVerify = pinInput.trim().length >= 4;
+  const [resendCountdown, setResendCountdown] = useState(60);
+  const [resendCount, setResendCount] = useState(0);
+
+  useEffect(() => {
+    if (resendCountdown <= 0) return;
+    const id = setInterval(() => setResendCountdown(v => v > 0 ? v - 1 : 0), 1000);
+    return () => clearInterval(id);
+  }, [resendCountdown]);
+
+  const handleResend = () => {
+    onResend();
+    setResendCount(c => c + 1);
+    setResendCountdown(60);
+    onPinChange('');
+  };
+
+  return (
+    <section className="flex flex-col px-3 pb-4 space-y-3">
+      <button onClick={onBack} className="mb-2 flex items-center gap-1 text-[12px] text-[#777]">
+        <ArrowLeft size={14} /> Back
+      </button>
+      <Panel>
+        <div className="flex items-center gap-2 mb-4">
+          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-[#fff3ee]">
+            <UserCheck size={18} className="text-[#ff4c16]" />
+          </div>
+          <div>
+            <h3 className="text-[14px] font-bold text-[#3a3a3a]">Verify your identity</h3>
+            <p className="text-[11px] text-[#888]">We&apos;ve sent a PIN to {email}</p>
+          </div>
+        </div>
+        <div className="bg-[#f8f8f8] p-3 rounded-lg border border-[#e5e5e5]">
+          <label className="text-[11px] text-[#717171] font-semibold block mb-1">Enter PIN</label>
+          <input
+            type="text"
+            inputMode="numeric"
+            maxLength={6}
+            value={pinInput}
+            onChange={e => onPinChange(e.target.value.replace(/\D/g, ''))}
+            placeholder="Enter your PIN"
+            className={`w-full rounded border px-3 py-2.5 text-[14px] font-mono bg-white tracking-widest ${pinError ? 'border-red-400' : 'border-[#d5d5d5]'}`}
+          />
+          {pinError && <p className="mt-1 text-[11px] font-medium text-red-500">{pinError}</p>}
+        </div>
+        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800 flex items-start gap-2">
+          <AlertCircle size={14} className="mt-0.5 flex-shrink-0 text-amber-500" />
+          <span>The PIN is valid for 30 minutes. Check your inbox or spam folder.</span>
+        </div>
+        {resendCount > 0 && (
+          <div className="mt-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-[11px] text-orange-800 flex items-start gap-2">
+            <AlertCircle size={13} className="mt-0.5 flex-shrink-0 text-orange-500" />
+            <span>A new PIN has been sent. <strong>Your previous PIN is no longer valid.</strong></span>
+          </div>
+        )}
+        <div className="mt-3 flex items-center justify-center gap-2">
+          {resendCountdown > 0 ? (
+            <p className="text-[12px] text-[#999]">
+              Resend PIN in <span className="font-bold text-[#555]">{resendCountdown}s</span>
+            </p>
+          ) : (
+            <button type="button" onClick={handleResend} className="text-[12px] font-semibold text-[#2a5f9e] underline">
+              Resend PIN
+            </button>
+          )}
+        </div>
+      </Panel>
+      <motion.button
+        disabled={!canVerify}
+        onClick={onVerify}
+        whileTap={canVerify ? { scale: 0.98 } : {}}
+        className={`w-full rounded-lg py-3.5 text-[18px] font-bold text-white shadow-md transition-all ${canVerify ? 'bg-[#ff4c16]' : 'bg-[#f4a18e] cursor-not-allowed'}`}
+      >
+        Verify PIN
+      </motion.button>
+      <CancelTransactionButton onClick={onCancel} disabled={paymentInitiated} />
+    </section>
+  );
+}
+
+// ==========================================
+// USE DIFFERENT BANK — STEP 3: EXISTING USER DETAILS (read-only)
+// ==========================================
+function DifferentAccountExistingUserScreen({
+  payerData, isNewCustomer, onContinue, onBack, onCancel, paymentInitiated,
+}: {
+  payerData: PayerDetails; isNewCustomer?: boolean;
+  onContinue: (data: PayerDetails) => void; onBack: () => void; onCancel: () => void; paymentInitiated?: boolean;
+}) {
+  const [editData, setEditData] = useState<PayerDetails>({ ...payerData });
+  const field = (key: keyof PayerDetails, placeholder: string, label: string, type = 'text') => (
+    <div className="mb-2">
+      <label className="text-[11px] text-[#717171] font-semibold block mb-1">{label}</label>
+      <input
+        type={type}
+        value={(editData[key] as string) || ''}
+        onChange={e => setEditData(prev => ({ ...prev, [key]: e.target.value }))}
+        placeholder={placeholder}
+        className="w-full rounded border border-[#d5d5d5] bg-white px-3 py-2 text-[12px] focus:border-[#ff4c16] outline-none"
+      />
+    </div>
+  );
+
+  return (
+    <section className="flex flex-col px-3 pb-4 space-y-3">
+      <button onClick={onBack} className="mb-2 flex items-center gap-1 text-[12px] text-[#777]">
+        <ArrowLeft size={14} /> Back
+      </button>
+      <Panel>
+        <div className="flex items-center gap-2 mb-4">
+          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-green-100">
+            <UserCheck size={18} className="text-green-600" />
+          </div>
+          <div>
+            <h3 className="text-[14px] font-bold text-[#3a3a3a]">Verify details</h3>
+            <p className="text-[11px] text-[#888]">
+              {isNewCustomer ? 'Review and edit your details before continuing' : 'Please confirm these are your details'}
+            </p>
+          </div>
+        </div>
+
+        {isNewCustomer ? (
+          /* ── Editable form for new customers ── */
+          <div className="space-y-1">
+            <div className="flex gap-2">
+              <div className="flex-1">{field('firstName', 'First name', 'First Name')}</div>
+              <div className="flex-1">{field('lastName', 'Last name', 'Last Name')}</div>
+            </div>
+            {field('email', 'email@example.com', 'Email Address', 'email')}
+            {field('dob', 'DD/MM/YYYY', 'Date of Birth')}
+            <p className="text-[11px] text-[#717171] font-semibold mt-1 mb-1">Home Address</p>
+            {field('addressLine1', 'Address Line 1', 'Address Line 1')}
+            {field('addressLine2', 'Address Line 2 (Optional)', 'Address Line 2')}
+            <div className="flex gap-2">
+              <div className="flex-1">{field('city', 'City', 'City')}</div>
+              <div className="flex-1">{field('postcode', 'Post code', 'Post Code')}</div>
+            </div>
+          </div>
+        ) : (
+          /* ── Read-only view for existing (registered) customers ── */
+          <>
+            <div className="bg-[#f8f8f8] px-3 py-2.5 rounded-lg border border-[#e5e5e5]">
+              <DataRow label="Full Name"     value={getPayerFullName(payerData)} />
+              <DataRow label="Email"         value={payerData.email} />
+              <DataRow label="Date of Birth" value={payerData.dob} />
+              <DataRow label="Address"       value={[payerData.addressLine1, payerData.addressLine2, payerData.city, payerData.postcode].filter(Boolean).join(', ')} />
+            </div>
+            <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-[11px] text-blue-800 flex items-start gap-2">
+              <Info size={14} className="mt-0.5 flex-shrink-0" />
+              <span>These details are from your registered account and cannot be edited here. If they are incorrect, please contact support.</span>
+            </div>
+          </>
+        )}
+      </Panel>
+
+      <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800 flex items-start gap-2">
+        <AlertCircle size={14} className="mt-0.5 flex-shrink-0 text-amber-500" />
+        <span>The bank account used for payment must be in this payer&apos;s name. Mismatches will cause verification to fail.</span>
+      </div>
+
+      <motion.button
+        onClick={() => onContinue(isNewCustomer ? editData : payerData)}
+        whileTap={{ scale: 0.98 }}
+        className="w-full rounded-lg bg-[#ff4c16] py-3.5 text-[18px] font-bold text-white shadow-md"
+      >
+        Continue
+      </motion.button>
+      <CancelTransactionButton onClick={onCancel} disabled={paymentInitiated} />
+    </section>
+  );
+}
+
+// ==========================================
 // SCREEN 3: REVIEW PAYER DETAILS
 // ==========================================
 function ReviewScreen({ payer, accountType, onSubmit, onBack, onCancel, paymentInitiated }: { payer: PayerDetails; accountType: AccountType; onSubmit: () => void; onBack: () => void; onCancel: () => void; paymentInitiated?: boolean }) {
@@ -1167,7 +1818,7 @@ function ReviewScreen({ payer, accountType, onSubmit, onBack, onCancel, paymentI
 // ==========================================
 // IMPORTANT INFORMATION MODAL (Personal only)
 // ==========================================
-function ImportantInformationModal({ onConfirm, onBack }: { onConfirm: () => void; onBack: () => void }) {
+function ImportantInformationModal({ onConfirm, onBack, payerName }: { onConfirm: () => void; onBack: () => void; payerName?: string }) {
   const [checked, setChecked] = useState(false);
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
@@ -1177,11 +1828,13 @@ function ImportantInformationModal({ onConfirm, onBack }: { onConfirm: () => voi
           <h3 className="text-[17px] font-bold text-[#b08518]">Important Information</h3>
         </div>
         <p className="mt-3 text-[14px] leading-relaxed text-[#73643b]">
-          To prevent payment rejection, the payer name on your profile <strong className="font-bold text-[#62532d]">must exactly match</strong> the name on the bank account you are about to use.
+          To prevent payment rejection, the payer name you provided <strong className="font-bold text-[#62532d]">must exactly match</strong> the name on the bank account you are about to use.
         </p>
         <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-[6px] border border-[#fce3a1] bg-white p-3.5 shadow-sm">
           <input type="checkbox" checked={checked} onChange={e => setChecked(e.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 accent-[#cca01d]" />
-          <span className="text-[14px] font-bold leading-snug text-[#1f2d3d]">I confirm that the name provided matches the bank account name exactly.</span>
+          <span className="text-[14px] font-bold leading-snug text-[#1f2d3d]">
+            I confirm that the name:{' '}{payerName ? (<>&apos;<span className="text-[#ff4c16]">{payerName}</span>&apos;</>) : null}{' '}matches the bank account name exactly.
+          </span>
         </label>
         <button onClick={onConfirm} disabled={!checked}
           className={`mt-5 w-full rounded-lg py-2.5 text-[15px] font-bold text-white transition-colors ${checked ? 'bg-[#ff4c16] hover:bg-[#e64516]' : 'bg-[#f4c2b3] cursor-not-allowed'}`}>
@@ -1190,6 +1843,85 @@ function ImportantInformationModal({ onConfirm, onBack }: { onConfirm: () => voi
         <button onClick={onBack} className="mt-3 w-full py-1 text-[13px] font-semibold text-[#b08518] underline">Change payer info</button>
       </motion.div>
     </motion.div>
+  );
+}
+
+// ==========================================
+// PLAID PAYMENT GATEWAY SCREEN
+// ==========================================
+function PlaidScreen({ onBack, onCancel, paymentInitiated }: { onBack: () => void; onCancel: () => void; paymentInitiated?: boolean }) {
+  const [selectedBank, setSelectedBank] = useState<string | null>(null);
+  const PLAID_BANKS = [
+    { id: 'barclays',   name: 'Barclays',         logo: '🏦' },
+    { id: 'hsbc',       name: 'HSBC',             logo: '🔴' },
+    { id: 'lloyds',     name: 'Lloyds Bank',      logo: '🐴' },
+    { id: 'natwest',    name: 'NatWest',           logo: '🟣' },
+    { id: 'santander',  name: 'Santander',         logo: '🔥' },
+    { id: 'monzo',      name: 'Monzo',             logo: '🟠' },
+  ];
+  return (
+    <section className="flex flex-col px-3 pb-4 space-y-3">
+      <button onClick={onBack} className="mb-2 flex items-center gap-1 text-[12px] text-[#777]">
+        <ArrowLeft size={14} /> Back
+      </button>
+
+      {/* Plaid header */}
+      <div className="overflow-hidden rounded-xl bg-white shadow-sm border border-[#e0e0e0]">
+        <div className="flex items-center justify-between border-b border-[#f0f0f0] px-4 py-3">
+          <div className="flex items-center gap-2">
+            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-[#1a1a2e]">
+              <span className="text-[11px] font-black text-white">P</span>
+            </div>
+            <span className="text-[13px] font-bold text-[#1a1a2e]">Plaid</span>
+          </div>
+          <div className="flex items-center gap-1 text-[10px] text-[#999]">
+            <ShieldCheck size={11} className="text-green-500" />
+            <span>256-bit encryption</span>
+          </div>
+        </div>
+
+        <div className="px-4 py-4">
+          <h3 className="text-[15px] font-bold text-[#1a1a2e]">Connect your bank account</h3>
+          <p className="mt-1 text-[11px] text-[#888]">Select your bank to securely verify your account details</p>
+
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            {PLAID_BANKS.map(bank => (
+              <button
+                key={bank.id}
+                type="button"
+                onClick={() => setSelectedBank(bank.id)}
+                className={`flex items-center gap-2 rounded-lg border-2 px-3 py-2.5 text-left transition-all ${
+                  selectedBank === bank.id ? 'border-[#1a1a2e] bg-[#f5f5fa]' : 'border-[#e8e8e8] bg-white hover:border-[#bbb]'
+                }`}
+              >
+                <span className="text-[18px]">{bank.logo}</span>
+                <span className="text-[12px] font-semibold text-[#333]">{bank.name}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-4 rounded-lg bg-[#f7f7f7] border border-[#ebebeb] px-3 py-2.5 text-[10px] text-[#999] flex items-start gap-2">
+            <ShieldCheck size={12} className="mt-0.5 flex-shrink-0 text-[#1a1a2e]" />
+            <span>Plaid never stores your bank credentials. Your data is encrypted and never shared without your permission.</span>
+          </div>
+        </div>
+
+        <motion.button
+          disabled={!selectedBank}
+          whileTap={selectedBank ? { scale: 0.98 } : {}}
+          className={`mx-4 mb-4 w-[calc(100%-32px)] rounded-lg py-3 text-[14px] font-bold text-white transition-all ${selectedBank ? 'bg-[#1a1a2e]' : 'bg-[#9999aa] cursor-not-allowed'}`}
+        >
+          Continue with {selectedBank ? PLAID_BANKS.find(b => b.id === selectedBank)?.name : 'selected bank'}
+        </motion.button>
+
+        <div className="flex items-center justify-center gap-1 pb-3 text-[10px] text-[#bbb]">
+          <span>Powered by</span>
+          <span className="font-bold text-[#1a1a2e]">Plaid</span>
+        </div>
+      </div>
+
+      <CancelTransactionButton onClick={onCancel} disabled={paymentInitiated} />
+    </section>
   );
 }
 
@@ -1238,7 +1970,7 @@ function AwaitingScreen({ timer, isUrgent, onCancel, paymentInitiated = false }:
       </Panel>
       <Panel>
         <h3 className="text-[13px] font-bold text-[#333] mb-3">Payment Status</h3>
-        <StatusTracker activeStep={3} />
+        <StatusTracker activeStep={2} />
       </Panel>
       <Panel>
         <div className="flex items-center gap-2 text-[12px] text-[#666]">
@@ -1267,7 +1999,7 @@ function ReceivedScreen({ timer, isUrgent, onCancel, paymentInitiated }: { timer
       </Panel>
       <Panel>
         <h3 className="text-[13px] font-bold text-[#333] mb-3">Payment Status</h3>
-        <StatusTracker activeStep={5} />
+        <StatusTracker activeStep={4} />
       </Panel>
       <Panel>
         <div className="flex items-center gap-2 text-[12px] text-[#666]">
@@ -1303,7 +2035,7 @@ function SuccessScreen({ redirectCountdown, onReturnNow }: { redirectCountdown: 
       </div>
       <Panel>
         <h3 className="text-[13px] font-bold text-[#333] mb-3">Payment Status</h3>
-        <StatusTracker activeStep={7} isComplete />
+        <StatusTracker activeStep={5} isComplete />
       </Panel>
     </section>
   );
@@ -1393,14 +2125,14 @@ function MismatchScreen({ payerName, bankName, attempts, onCorrectDetails, onRef
               className="mt-4 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2.5 text-[12px] text-amber-800 text-left flex items-start gap-2"
             >
               <Info size={14} className="mt-0.5 flex-shrink-0 text-amber-600" />
-              <span>For security reasons, this transaction has been stopped before any funds were transferred.</span>
+              <span>We have received your funds, however the name on the bank account does not match the payer name provided. <strong>Your funds will be returned in full to the same bank account</strong> they were sent from. This usually takes 1–3 business days depending on your bank.</span>
             </motion.div>
             <div className="mt-5 space-y-2">
-              <motion.button onClick={onCorrectDetails} whileTap={{ scale: 0.97 }} className="w-full rounded-lg bg-[#ff4c16] py-3 text-[14px] font-bold text-white flex items-center justify-center gap-2">
-                <FileEdit size={15} /> Correct payer details ({3 - attempts} attempt{3 - attempts !== 1 ? 's' : ''} left)
+              <motion.button onClick={onRefunding} whileTap={{ scale: 0.97 }} className="w-full rounded-lg bg-[#ff4c16] py-3 text-[14px] font-bold text-white flex items-center justify-center gap-2">
+                <RefreshCcw size={15} /> Retry with a bank account in &apos;{payerName}&apos;s name
               </motion.button>
-              <motion.button onClick={onRefunding} whileTap={{ scale: 0.97 }} className="w-full rounded-lg border border-[#d5d5d5] bg-white py-3 text-[13px] font-semibold text-[#555] flex items-center justify-center gap-2">
-                <RefreshCcw size={14} /> Retry with a bank account in your name
+              <motion.button onClick={onCorrectDetails} whileTap={{ scale: 0.97 }} className="w-full rounded-lg border border-[#d5d5d5] bg-white py-3 text-[13px] font-semibold text-[#555] flex items-center justify-center gap-2">
+                <FileEdit size={14} /> Correct the bank a/c details ({3 - attempts} attempt{3 - attempts !== 1 ? 's' : ''} left)
               </motion.button>
               <CancelTransactionButton onClick={onCancel} disabled={paymentInitiated} />
             </div>
@@ -1409,7 +2141,7 @@ function MismatchScreen({ payerName, bankName, attempts, onCorrectDetails, onRef
       </div>
       <Panel>
         <h3 className="text-[13px] font-bold text-[#333] mb-3">Payment Status</h3>
-        <StatusTracker activeStep={1} isMismatch />
+        <StatusTracker activeStep={4} isMismatch />
       </Panel>
     </section>
   );
