@@ -162,7 +162,11 @@ const fadeIn = {
   exit:    { opacity: 0, transition: { duration: 0.2 } },
 };
 
-const TIMER_ACTIVE_STAGES: Stage[] = ['processing', 'awaiting', 'received'];
+const TIMER_ACTIVE_STAGES: Stage[] = [
+  'details', 'personal-form', 'review',
+  'different-account-email', 'different-account-pin', 'different-account-existing-user',
+  'plaid', 'processing', 'awaiting', 'received',
+];
 
 // Helper: build display name from payer fields
 function getPayerFullName(p: PayerDetails): string {
@@ -192,7 +196,7 @@ function StatusTracker({ activeStep, isMismatch = false, isComplete = false }: {
             <div className="flex flex-col items-center">
               <div className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold
                 ${step.status === 'done'   ? 'bg-green-500 text-white'
-                : step.status === 'active' ? (isThisStepFailed ? 'bg-amber-500 text-white' : 'bg-[#ff4c16] text-white')
+                : step.status === 'active' ? (isThisStepFailed ? 'bg-red-600 text-white' : 'bg-[#ff4c16] text-white')
                 : 'bg-[#e0e0e0] text-[#aaa]'}`}>
                 {step.status === 'done'   ? <Check size={11} />
                 : step.status === 'active' ? (isThisStepFailed ? <X size={11} /> : <Loader2 size={11} className="animate-spin" />)
@@ -202,7 +206,7 @@ function StatusTracker({ activeStep, isMismatch = false, isComplete = false }: {
             </div>
             <p className={`pt-0.5 text-[11px] leading-snug
               ${step.status === 'done'   ? 'text-green-700 font-medium'
-              : step.status === 'active' ? (isThisStepFailed ? 'text-amber-700 font-medium' : 'text-[#333] font-semibold')
+              : step.status === 'active' ? (isThisStepFailed ? 'text-red-700 font-medium' : 'text-[#333] font-semibold')
               : 'text-[#bbb]'}`}>{step.label}</p>
           </div>
         );
@@ -404,27 +408,46 @@ export default function AirPeacePaymentFlow() {
 
   // ---- Summary → Details (account type selector) ----
   const handleAfterSummary = useCallback(() => {
-    setAccountType(null);
-    setStage('details');
-  }, []);
+    if (isNewCustomer) {
+      // New customers skip the bank-account selection screen entirely
+      setAccountType('PERSONAL');
+      setPayer(prev => ({
+        ...prev,
+        firstName: '', middleName: '', lastName: '',
+        email: '', dob: '', mobile: '',
+        addressLine1: '', addressLine2: '', city: '', postcode: '',
+      }));
+      setFieldErrors({});
+      setPersonalFormSource('details');
+      setStage('personal-form');
+    } else {
+      setAccountType(null);
+      setStage('details');
+    }
+  }, [isNewCustomer]);
 
-  // ---- Personal selected → new customers go straight to email entry; existing users stay on details ----
+  // ---- Personal selected → new customers go straight to payer form; existing users stay on details ----
   const handleSelectPersonal = useCallback(() => {
     setAccountType('PERSONAL');
     setFieldErrors({});
-    setPayer(prev => ({
-      ...prev,
-      firstName:  prev.firstName  || PARTNER_DATA.firstName,
-      middleName: prev.middleName || PARTNER_DATA.middleName,
-      lastName:   prev.lastName   || PARTNER_DATA.lastName,
-    }));
     if (isNewCustomer) {
-      setDifferentAccountEmail('');
-      setDifferentAccountPinInput('');
-      setDifferentAccountPinError('');
-      setExistingPayerData(null);
-      setPersonalFormSource('different-account-email');
-      setStage('different-account-email');
+      // New customer: clear payer fields and go straight to the payer info form
+      setPayer(prev => ({
+        ...prev,
+        firstName: '', middleName: '', lastName: '',
+        email: '', dob: '', mobile: '',
+        addressLine1: '', addressLine2: '', city: '', postcode: '',
+      }));
+      setPersonalFormSource('details');
+      setStage('personal-form');
+    } else {
+      // Existing customer: pre-fill from partner data and stay on details screen
+      setPayer(prev => ({
+        ...prev,
+        firstName:  prev.firstName  || PARTNER_DATA.firstName,
+        middleName: prev.middleName || PARTNER_DATA.middleName,
+        lastName:   prev.lastName   || PARTNER_DATA.lastName,
+      }));
     }
   }, [isNewCustomer]);
 
@@ -566,8 +589,14 @@ export default function AirPeacePaymentFlow() {
         )}
 
         {selectedScenario && stage !== 'method' && (
-          <div className="mx-3 mt-2 rounded-lg bg-[#2a5f9e]/10 px-3 py-1.5 text-center">
+          <div className="mx-3 mt-2 rounded-lg bg-[#2a5f9e]/10 px-3 py-1.5 flex items-center justify-between">
             <p className="text-[10px] font-semibold text-[#2a5f9e]">{selectedScenario.label}</p>
+            {TIMER_ACTIVE_STAGES.includes(stage) && stage !== 'summary' && (
+              <div className={`flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold ${isTimerUrgent ? 'bg-red-100 text-red-700' : 'bg-[#fff3ee] text-[#cc3a00]'}`}>
+                <Clock3 size={11} />
+                <span>{timerDisplay}</span>
+              </div>
+            )}
           </div>
         )}
 
@@ -587,7 +616,7 @@ export default function AirPeacePaymentFlow() {
         <AnimatePresence>
           {showWarningModal && (
             <ImportantInformationModal
-              payerName={getPayerFullName(payer)}
+              payerName={accountType === 'COMPANY' ? payer.companyName : getPayerFullName(payer)}
               onConfirm={() => { setHasAcknowledgedWarning(true); setIsShowingWarningModal(false); handleConfirmAndPay(true); }}
               onBack={() => {
                 setIsShowingWarningModal(false);
@@ -641,7 +670,7 @@ export default function AirPeacePaymentFlow() {
           {/* Screen 1: Entry / Payment Start */}
           {stage === 'summary' && (
             <motion.div key="summary" {...pageVariants}>
-              <SummaryScreen timer={timerDisplay} onContinue={handleAfterSummary} onCancel={handleCancelClick} paymentInitiated={paymentInitiated} />
+              <SummaryScreen timer={timerDisplay} urgent={isTimerUrgent} onContinue={handleAfterSummary} onCancel={handleCancelClick} paymentInitiated={paymentInitiated} />
             </motion.div>
           )}
 
@@ -678,12 +707,24 @@ export default function AirPeacePaymentFlow() {
                 onCompanyRegChange={handleCompanyRegChange}
                 onDirectorSelect={handleDirectorSelect}
                 onUseDifferent={() => {
-                  setDifferentAccountEmail('');
-                  setDifferentAccountPinInput('');
-                  setDifferentAccountPinError('');
-                  setExistingPayerData(null);
                   setFieldErrors({});
-                  setStage('different-account-email');
+                  if (isNewCustomer) {
+                    // New customers skip the email lookup — go straight to the payer form
+                    setPayer(prev => ({
+                      ...prev,
+                      firstName: '', middleName: '', lastName: '',
+                      email: '', dob: '', mobile: '',
+                      addressLine1: '', addressLine2: '', city: '', postcode: '',
+                    }));
+                    setPersonalFormSource('details');
+                    setStage('personal-form');
+                  } else {
+                    setDifferentAccountEmail('');
+                    setDifferentAccountPinInput('');
+                    setDifferentAccountPinError('');
+                    setExistingPayerData(null);
+                    setStage('different-account-email');
+                  }
                 }}
                 onBack={() => setStage('summary')}
                 onCancel={handleCancelClick}
@@ -704,7 +745,11 @@ export default function AirPeacePaymentFlow() {
                 onFieldChange={handleFieldChange}
                 onContinue={handlePersonalFormSubmit}
                 onBack={() => {
-                  if (personalFormSource === 'different-account-email') {
+                  if (isNewCustomer) {
+                    // New customers go back to the summary screen (they have no details/bank-selection screen)
+                    setAccountType(null);
+                    setStage('summary');
+                  } else if (personalFormSource === 'different-account-email') {
                     setStage('different-account-email');
                   } else {
                     // Restore partner data names when returning to the pre-filled details screen
@@ -763,6 +808,12 @@ export default function AirPeacePaymentFlow() {
                 onContinue={handleDifferentAccountExistingUserContinue}
                 onBack={() => { setDifferentAccountPinInput(''); setDifferentAccountPinError(''); setStage('different-account-pin'); }}
                 onCancel={handleCancelClick}
+                onUseDifferentAccount={() => {
+                  setPayer(prev => ({ ...prev, firstName: '', middleName: '', lastName: '', email: '', dob: '', mobile: '', addressLine1: '', addressLine2: '', city: '', postcode: '' }));
+                  setFieldErrors({});
+                  setPersonalFormSource('different-account-email');
+                  setStage('personal-form');
+                }}
                 paymentInitiated={paymentInitiated}
               />
             </motion.div>
@@ -977,7 +1028,7 @@ function MethodSelectionScreen({ onContinue, onBack, scenario }: { onContinue: (
 // ==========================================
 // SCREEN 1: ENTRY / PAYMENT START
 // ==========================================
-function SummaryScreen({ timer, onContinue, onCancel, paymentInitiated = false }: { timer: string; onContinue: () => void; onCancel: () => void; paymentInitiated?: boolean }) {
+function SummaryScreen({ timer, urgent = false, onContinue, onCancel, paymentInitiated = false }: { timer: string; urgent?: boolean; onContinue: () => void; onCancel: () => void; paymentInitiated?: boolean }) {
   return (
     <section className="px-3 pb-4 space-y-3">
       <div className="overflow-hidden rounded-xl bg-white px-4 py-5 shadow-sm">
@@ -987,10 +1038,15 @@ function SummaryScreen({ timer, onContinue, onCancel, paymentInitiated = false }
           <KV label="Reference" value="BNSCD1234567788TG" />
           <KV label="Paying to" value="Air Peace" />
         </div>
-        <div className="mt-4 flex items-center justify-center gap-2 rounded-lg bg-[#fff3ee] px-3 py-2 text-[12px] text-[#cc3a00]">
-          <Clock3 size={13} />
-          <p className="font-semibold">You have <span className="text-[#ff4d1b] font-bold">{timer}</span> to make payment</p>
+        {/* Prominent mid-page countdown */}
+        <div className={`mt-4 flex flex-col items-center justify-center gap-1 rounded-xl px-4 py-4 ${urgent ? 'bg-red-50 border border-red-200' : 'bg-[#fff3ee] border border-[#ffd5c2]'}`}>
+          <div className="flex items-center gap-2">
+            <Clock3 size={18} className={urgent ? 'text-red-600' : 'text-[#cc3a00]'} />
+            <span className={`text-[28px] font-extrabold tabular-nums ${urgent ? 'text-red-600' : 'text-[#ff4c16]'}`}>{timer}</span>
+          </div>
+          <p className={`text-[11px] font-medium ${urgent ? 'text-red-700' : 'text-[#cc3a00]'}`}>Please complete your payment within 10 minutes</p>
         </div>
+
         <div className="mt-4 flex items-start gap-2 rounded-lg border border-[#dceeff] bg-[#f0f6ff] px-3 py-3 text-[12px] text-[#2a5f9e]">
           <Info size={14} className="mt-0.5 flex-shrink-0" />
           <p>Please provide the payer details for this transaction. The bank account used for payment must be in the payer's name.</p>
@@ -1070,10 +1126,10 @@ function DetailsScreen({
               {/* Payer ≠ passenger notice */}
               <div className="mb-4 flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 text-[12px] text-blue-800">
                 <Info size={14} className="mt-0.5 flex-shrink-0" />
-                <p>The person or company making the payment may or may not be the passenger. Please ensure you provide the correct payer details — incorrect information may result in the payment being rejected.</p>
+                <p>Please ensure you provide the correct payer details — incorrect information may result in the payment being rejected.</p>
               </div>
 
-              <h3 className="text-[14px] font-bold text-[#3a3a3a] mb-1">Bank Account Details</h3>
+              <h3 className="text-[14px] font-bold text-[#3a3a3a] mb-1">Bank Account(s) used in the past</h3>
               <p className="text-[11px] text-[#888] mb-3">Select the bank account being used for this payment</p>
 
               {/* Saved bank account cards */}
@@ -1300,7 +1356,7 @@ function DetailsScreen({
               <div className="space-y-4">
                 {/* Company Email */}
                 <div className="bg-[#f4f4f4] p-3 rounded-lg border border-[#e5e5e5]">
-                  <label className="text-[11px] text-[#717171] font-bold">Company Email</label>
+                  <label className="text-[11px] text-[#717171] font-bold">Contact Email</label>
                   <input
                     value={payer.email}
                     onChange={e => onFieldChange?.('email', e.target.value)}
@@ -1401,15 +1457,28 @@ function PersonalFormScreen({ payer, fieldErrors, onFieldChange, onContinue, onB
   };
 
   return (
-    <section className="flex flex-col px-3 pb-4 space-y-3">
-      <button onClick={onBack} className="mb-2 flex items-center gap-1 text-[12px] text-[#777]"><ArrowLeft size={14} /> Back</button>
+    <section className="flex flex-col pb-4 space-y-3">
+      {/* Back button above blue box */}
+      <div className="px-3 pt-3">
+        <button onClick={onBack} className="flex items-center gap-1 text-[12px] text-[#777]"><ArrowLeft size={14} /> Back</button>
+      </div>
 
-      {/* Passenger Information */}
+      {/* Sticky blue info banner */}
+      <div className="sticky top-0 z-10 px-3 bg-transparent">
+        <div className="flex items-start gap-2 bg-[#e7f2ff] px-4 py-3 rounded-xl border border-[#9ac6f4] text-[#3b7dd8] text-[12px]">
+          <Info size={14} className="mt-0.5 flex-shrink-0" />
+          <p>The bank account used for payment must be in the payer's name. Mismatches will cause verification to fail and funds to be returned.</p>
+        </div>
+      </div>
+
+      <div className="px-3 space-y-3">
+
+      {/* Passenger Contact Information */}
       <div className="overflow-hidden rounded-xl bg-white px-4 py-4 shadow-sm border border-[#e0e0e0]">
-        <h3 className="text-[14px] font-bold text-[#3a3a3a] mb-3">Passenger Information</h3>
+        <h3 className="text-[14px] font-bold text-[#3a3a3a] mb-3">Passenger Contact Information</h3>
         <div className="bg-[#f8f8f8] px-3 py-2.5 rounded-lg">
           <DataRow label="Passenger Name" value={`${PARTNER_DATA.firstName}${PARTNER_DATA.middleName ? ' ' + PARTNER_DATA.middleName : ''} ${PARTNER_DATA.lastName}`} />
-          <DataRow label="Email" value={PARTNER_DATA.email} />
+          <DataRow label="Contact Email" value={PARTNER_DATA.email} />
         </div>
         <label className="mt-3 flex cursor-pointer items-center gap-3 rounded-lg border border-[#e0e0e0] bg-[#f8f8f8] px-3 py-2.5">
           <input
@@ -1418,7 +1487,7 @@ function PersonalFormScreen({ payer, fieldErrors, onFieldChange, onContinue, onB
             onChange={e => handleUsePassengerToggle(e.target.checked)}
             className="h-4 w-4 shrink-0 rounded border-gray-300 accent-[#ff4c16]"
           />
-          <span className="text-[12px] font-semibold text-[#3a3a3a]">Use passenger info as payer details</span>
+          <span className="text-[12px] font-semibold text-[#3a3a3a]">Use passenger contact info as payer</span>
         </label>
       </div>
 
@@ -1501,6 +1570,7 @@ function PersonalFormScreen({ payer, fieldErrors, onFieldChange, onContinue, onB
         Review details
       </motion.button>
       <CancelTransactionButton onClick={onCancel} disabled={paymentInitiated} />
+      </div>{/* end px-3 wrapper */}
     </section>
   );
 }
@@ -1680,10 +1750,10 @@ function DifferentAccountPinScreen({
 // USE DIFFERENT BANK — STEP 3: EXISTING USER DETAILS (read-only)
 // ==========================================
 function DifferentAccountExistingUserScreen({
-  payerData, isNewCustomer, onContinue, onBack, onCancel, paymentInitiated,
+  payerData, isNewCustomer, onContinue, onBack, onCancel, onUseDifferentAccount, paymentInitiated,
 }: {
   payerData: PayerDetails; isNewCustomer?: boolean;
-  onContinue: (data: PayerDetails) => void; onBack: () => void; onCancel: () => void; paymentInitiated?: boolean;
+  onContinue: (data: PayerDetails) => void; onBack: () => void; onCancel: () => void; onUseDifferentAccount: () => void; paymentInitiated?: boolean;
 }) {
   const [editData, setEditData] = useState<PayerDetails>({ ...payerData });
   const field = (key: keyof PayerDetails, placeholder: string, label: string, type = 'text') => (
@@ -1710,7 +1780,7 @@ function DifferentAccountExistingUserScreen({
             <UserCheck size={18} className="text-green-600" />
           </div>
           <div>
-            <h3 className="text-[14px] font-bold text-[#3a3a3a]">Verify details</h3>
+            <h3 className="text-[14px] font-bold text-[#3a3a3a]">Review Bank Account Holder's Details</h3>
             <p className="text-[11px] text-[#888]">
               {isNewCustomer ? 'Review and edit your details before continuing' : 'Please confirm these are your details'}
             </p>
@@ -1738,7 +1808,7 @@ function DifferentAccountExistingUserScreen({
           /* ── Read-only view for existing (registered) customers ── */
           <>
             <div className="bg-[#f8f8f8] px-3 py-2.5 rounded-lg border border-[#e5e5e5]">
-              <DataRow label="Full Name"     value={getPayerFullName(payerData)} />
+              <DataRow label="Bank Account Holder's Name" value={getPayerFullName(payerData)} />
               <DataRow label="Email"         value={payerData.email} />
               <DataRow label="Date of Birth" value={payerData.dob} />
               <DataRow label="Address"       value={[payerData.addressLine1, payerData.addressLine2, payerData.city, payerData.postcode].filter(Boolean).join(', ')} />
@@ -1763,6 +1833,13 @@ function DifferentAccountExistingUserScreen({
       >
         Continue
       </motion.button>
+      <button
+        type="button"
+        onClick={onUseDifferentAccount}
+        className="w-full rounded-lg border border-[#d0d0d0] bg-white py-3 text-[13px] font-semibold text-[#555] hover:bg-[#f5f5f5]"
+      >
+        Use a different bank account
+      </button>
       <CancelTransactionButton onClick={onCancel} disabled={paymentInitiated} />
     </section>
   );
@@ -1777,7 +1854,7 @@ function ReviewScreen({ payer, accountType, onSubmit, onBack, onCancel, paymentI
     <section className="flex flex-col px-3 pb-4 space-y-3">
       <button onClick={onBack} className="mb-2 flex items-center gap-1 text-[12px] text-[#777]"><ArrowLeft size={14} /> Back</button>
       <Panel>
-        <h2 className="text-[15px] font-semibold text-[#3a3a3a]">Review your payer details</h2>
+        <h2 className="text-[15px] font-semibold text-[#3a3a3a]">Review Bank Account Holder's Details</h2>
         <p className="mt-1 text-[12px] text-[#6e6e6e]">Please confirm your information is correct before continuing</p>
       </Panel>
 
@@ -1785,14 +1862,22 @@ function ReviewScreen({ payer, accountType, onSubmit, onBack, onCancel, paymentI
         <div className="bg-[#f8f8f8] px-3 py-2.5 rounded-lg">
           {isCompany ? (
             <>
-              <DataRow label="Company"  value={payer.companyName} />
-              <DataRow label="Director" value={payer.directorName} />
-              <DataRow label="Email"    value={payer.email} />
+              <DataRow label="Company Name"  value={payer.companyName} />
+              <DataRow label="Director"      value={payer.directorName} />
+              <DataRow label="Contact Email" value={payer.email} />
             </>
           ) : (
             <>
-              <DataRow label="Payer Name" value={getPayerFullName(payer)} />
-              <DataRow label="Email"      value={payer.email} />
+              <DataRow label="Bank Account Holder's Name" value={getPayerFullName(payer)} />
+              <DataRow label="Contact Email" value={payer.email} />
+              {payer.dob        && <DataRow label="Date of Birth"  value={payer.dob} />}
+              {payer.mobile     && <DataRow label="Mobile"         value={payer.mobile} />}
+              {payer.addressLine1 && (
+                <DataRow
+                  label="Address"
+                  value={[payer.addressLine1, payer.addressLine2, payer.city, payer.postcode].filter(Boolean).join(', ')}
+                />
+              )}
             </>
           )}
         </div>
@@ -1944,7 +2029,6 @@ function ProcessingScreen({ timer, isUrgent, onCancel, paymentInitiated = false 
         </div>
         <h2 className="mt-5 text-[20px] font-bold text-[#333]">Redirecting you securely</h2>
         <p className="mt-2 text-[13px] text-[#666] leading-relaxed">You will now complete the transfer from your bank. Please do not close this page.</p>
-        <div className="mt-5"><TimerBadge display={timer} urgent={isUrgent} /></div>
         <div className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-[#999]">
           <ShieldCheck size={12} /><span>Secured by Mito.Money</span>
         </div>
@@ -1962,7 +2046,6 @@ function AwaitingScreen({ timer, isUrgent, onCancel, paymentInitiated = false }:
     <section className="px-3 pb-4 space-y-3">
       <Panel>
         <Brand />
-        <div className="mt-4"><TimerBadge display={timer} urgent={isUrgent} /></div>
         <div className="mt-4 rounded-lg bg-blue-50 border border-blue-200 px-3 py-3 text-[12px] text-blue-800 flex items-start gap-2">
           <Info size={14} className="mt-0.5 flex-shrink-0" />
           <span>Your transfer has been initiated from your bank. Please do not close this page while we wait to receive your funds.</span>
@@ -1991,7 +2074,6 @@ function ReceivedScreen({ timer, isUrgent, onCancel, paymentInitiated }: { timer
     <section className="px-3 pb-4 space-y-3">
       <Panel>
         <Brand />
-        <div className="mt-4"><TimerBadge display={timer} urgent={isUrgent} /></div>
         <div className="mt-4 rounded-lg bg-green-50 border border-green-200 px-3 py-3 text-[12px] text-green-800 flex items-start gap-2">
           <CheckCircle2 size={14} className="mt-0.5 flex-shrink-0 text-green-600" />
           <span>We have received your funds. We are now validating that the bank account name matches the payer details you provided.</span>
@@ -2141,7 +2223,7 @@ function MismatchScreen({ payerName, bankName, attempts, onCorrectDetails, onRef
       </div>
       <Panel>
         <h3 className="text-[13px] font-bold text-[#333] mb-3">Payment Status</h3>
-        <StatusTracker activeStep={4} isMismatch />
+        <StatusTracker activeStep={5} isMismatch />
       </Panel>
     </section>
   );
